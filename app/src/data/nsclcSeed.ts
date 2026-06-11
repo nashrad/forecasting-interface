@@ -1,0 +1,223 @@
+import type { FunnelConfig } from '../types/funnel';
+
+export const nsclcSeed: FunnelConfig = {
+  id: 'nsclc-base',
+  name: 'Base Case',
+  diseaseArea: 'Non-Small Cell Lung Cancer (NSCLC)',
+  poolModel: 'both',
+  population: {
+    prevalence: 1250000,
+    prevalenceSource: 'GLOBOCAN 2022',
+    prevalenceYear: 2022,
+    incidence: 235000,
+    incidenceSource: 'GLOBOCAN 2022',
+    incidenceYear: 2022,
+  },
+  diagnosis: {
+    included: true,
+    segments: [
+      {
+        id: 'seg-egfr',
+        label: 'EGFR+',
+        segmentDimension: 'Biomarker',
+        rationale: 'EGFR mutations present in ~15% of NSCLC; targetable with TKIs',
+        subSegments: [
+          { id: 'sub-egfr-ex19', label: 'Exon 19 del' },
+          { id: 'sub-egfr-ex21', label: 'L858R (Exon 21)' },
+          { id: 'sub-egfr-rare', label: 'Rare mutations' },
+        ],
+        diagnosisRate: 0.72,
+        diagnosisRateSource: 'IASLC 2023',
+        diagnosisRateYear: 2023,
+        treatmentRate: 0.68,
+        treatmentRateSource: 'NCCN Guidelines 2024',
+        treatmentRateYear: 2024,
+      },
+      {
+        id: 'seg-alk',
+        label: 'ALK+',
+        segmentDimension: 'Biomarker',
+        rationale: 'ALK rearrangements in ~5% of NSCLC; sensitive to ALK inhibitors',
+        subSegments: [
+          { id: 'sub-alk-v1', label: 'EML4-ALK v1' },
+          { id: 'sub-alk-v3', label: 'EML4-ALK v3' },
+        ],
+        diagnosisRate: 0.68,
+        diagnosisRateSource: 'IASLC 2023',
+        diagnosisRateYear: 2023,
+        treatmentRate: 0.65,
+        treatmentRateSource: 'NCCN Guidelines 2024',
+        treatmentRateYear: 2024,
+      },
+      {
+        id: 'seg-kras',
+        label: 'KRAS G12C',
+        segmentDimension: 'Biomarker',
+        rationale: 'KRAS G12C in ~13% of NSCLC; first targetable KRAS mutation',
+        subSegments: [],
+        diagnosisRate: 0.70,
+        diagnosisRateSource: 'IASLC 2023',
+        diagnosisRateYear: 2023,
+        treatmentRate: 0.60,
+        treatmentRateSource: 'NCCN Guidelines 2024',
+        treatmentRateYear: 2024,
+      },
+      {
+        id: 'seg-other',
+        label: 'Other / Wild-type',
+        segmentDimension: 'Biomarker',
+        rationale: 'Remaining NSCLC population; stratified by PD-L1 expression',
+        subSegments: [
+          { id: 'sub-pdl1-high', label: 'PD-L1 ≥50%' },
+          { id: 'sub-pdl1-mid', label: 'PD-L1 1–49%' },
+          { id: 'sub-pdl1-neg', label: 'PD-L1 <1%' },
+        ],
+        diagnosisRate: 0.65,
+        diagnosisRateSource: 'IASLC 2023',
+        diagnosisRateYear: 2023,
+        treatmentRate: 0.62,
+        treatmentRateSource: 'NCCN Guidelines 2024',
+        treatmentRateYear: 2024,
+      },
+    ],
+  },
+  treatment: {
+    included: true,
+  },
+  lot: {
+    included: true,
+    lines: [
+      {
+        id: 'lot-1l',
+        label: '1st Line (1L)',
+        attritionRate: 0,
+        attritionSource: 'N/A — entry point',
+        subSegments: [],
+      },
+      {
+        id: 'lot-2l',
+        label: '2nd Line (2L)',
+        attritionRate: 0.55,
+        attritionSource: 'ESMO Clinical Practice Guidelines 2023',
+        subSegments: [],
+      },
+      {
+        id: 'lot-3l',
+        label: '3rd Line (3L+)',
+        attritionRate: 0.50,
+        attritionSource: 'ESMO Clinical Practice Guidelines 2023',
+        subSegments: [],
+      },
+    ],
+  },
+  drugClass: {
+    included: true,
+    classes: [
+      {
+        id: 'class-checkpoint',
+        label: 'PD-1/PD-L1 Checkpoint Inhibitors',
+        classShare: 0.45,
+        classShareSource: 'IQVIA 2023',
+        subSegments: [],
+      },
+      {
+        id: 'class-targeted',
+        label: 'Targeted Therapy (TKIs)',
+        classShare: 0.38,
+        classShareSource: 'IQVIA 2023',
+        subSegments: [],
+      },
+      {
+        id: 'class-chemo',
+        label: 'Chemotherapy',
+        classShare: 0.17,
+        classShareSource: 'IQVIA 2023',
+        subSegments: [],
+      },
+    ],
+  },
+  products: {
+    approved: [
+      {
+        id: 'prod-pembro',
+        label: 'Pembrolizumab',
+        type: 'approved',
+        marketShare: 0.42,
+        shareSource: 'IQVIA 2023',
+        confidence: 'high',
+      },
+      {
+        id: 'prod-osimertinib',
+        label: 'Osimertinib',
+        type: 'approved',
+        marketShare: 0.28,
+        shareSource: 'IQVIA 2023',
+        confidence: 'high',
+      },
+      {
+        id: 'prod-sotorasib',
+        label: 'Sotorasib',
+        type: 'approved',
+        marketShare: 0.15,
+        shareSource: 'IQVIA 2023',
+        confidence: 'high',
+      },
+    ],
+    pipeline: [
+      {
+        id: 'prod-adagrasib',
+        label: 'Adagrasib + Cetuximab',
+        type: 'pipeline',
+        pipelineStage: 'Phase III',
+        peakShare: 0.22,
+        timeToPeak: 3,
+        confidence: 'medium',
+      },
+      {
+        id: 'prod-novel-bispecific',
+        label: 'Novel EGFR Bispecific',
+        type: 'pipeline',
+        pipelineStage: 'Phase II',
+        peakShare: 0.18,
+        timeToPeak: 5,
+        confidence: 'low',
+      },
+    ],
+  },
+};
+
+export const emptyConfig: FunnelConfig = {
+  id: 'blank',
+  name: 'New Scenario',
+  diseaseArea: 'Disease Area',
+  poolModel: 'prevalence',
+  population: {},
+  diagnosis: {
+    included: true,
+    segments: [
+      {
+        id: 'seg-1',
+        label: 'Segment 1',
+        subSegments: [],
+      },
+    ],
+  },
+  treatment: { included: true },
+  lot: {
+    included: true,
+    lines: [
+      { id: 'lot-1', label: '1st Line (1L)', attritionRate: 0, subSegments: [] },
+      { id: 'lot-2', label: '2nd Line (2L)', attritionRate: 0.5, subSegments: [] },
+    ],
+  },
+  drugClass: {
+    included: true,
+    classes: [
+      { id: 'class-1', label: 'Drug Class 1', subSegments: [] },
+    ],
+  },
+  products: {
+    approved: [{ id: 'prod-1', label: 'Product 1', type: 'approved' }],
+    pipeline: [{ id: 'pipe-1', label: 'Pipeline Asset 1', type: 'pipeline', pipelineStage: 'Phase III' }],
+  },
+};
