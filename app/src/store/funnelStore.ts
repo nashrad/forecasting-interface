@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FunnelConfig, ActiveStep, CascadeWarning, Segment, LOTLine, DrugClass, Product } from '../types/funnel';
+import type { FunnelConfig, ActiveStep, CascadeWarning, Segment, LOTLine, DrugClass, Product, BuildableLayer } from '../types/funnel';
 import { nsclcSeed, emptyConfig } from '../data/nsclcSeed';
 
 interface ScenarioMeta {
@@ -19,6 +19,14 @@ interface FunnelStore {
   // Cascade warning
   pendingWarning: CascadeWarning | null;
   setPendingWarning: (warning: CascadeWarning | null) => void;
+
+  // Progressive layer builder
+  showLayerTips: boolean;
+  setShowLayerTips: (show: boolean) => void;
+  layerInfoTarget: BuildableLayer | null;
+  setLayerInfoTarget: (layer: BuildableLayer | null) => void;
+  addPendingLayer: (layer: BuildableLayer) => void;
+  skipPendingLayer: (layer: BuildableLayer) => void;
 
   // Scenario management
   activeConfig: () => FunnelConfig;
@@ -148,6 +156,8 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
   activeScenarioId: nsclcSeed.id,
   activeStep: 1,
   pendingWarning: null,
+  showLayerTips: true,
+  layerInfoTarget: null,
 
   activeConfig: () =>
     get().scenarios.find(s => s.id === get().activeScenarioId) ?? get().scenarios[0],
@@ -180,9 +190,56 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
     const blank: FunnelConfig = {
       ...JSON.parse(JSON.stringify(emptyConfig)),
       id: `blank-${Date.now()}`,
+      // Start the progressive builder: pool exists, every middle layer is
+      // undecided so the canvas walks the user through Add/Skip one at a time.
+      diagnosis: { included: false, segments: [] },
+      lot: { included: false, lines: [] },
+      drugClass: { included: false, classes: [] },
+      pendingLayers: ['diagnosis', 'lot', 'drugClass'],
     };
     set(s => ({ scenarios: [...s.scenarios, blank], activeScenarioId: blank.id }));
   },
+
+  setShowLayerTips: show => set({ showLayerTips: show }),
+  setLayerInfoTarget: layer => set({ layerInfoTarget: layer }),
+
+  addPendingLayer: layer =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      const pendingLayers = (c.pendingLayers ?? []).filter(l => l !== layer);
+      if (layer === 'diagnosis') {
+        return {
+          ...c, pendingLayers,
+          diagnosis: {
+            included: true,
+            segments: c.diagnosis.segments.length ? c.diagnosis.segments : makeSegments(1, []),
+          },
+        };
+      }
+      if (layer === 'lot') {
+        return {
+          ...c, pendingLayers,
+          lot: {
+            included: true,
+            lines: c.lot.lines.length ? c.lot.lines : makeLotLines(2, []),
+          },
+        };
+      }
+      return {
+        ...c, pendingLayers,
+        drugClass: {
+          included: true,
+          classes: c.drugClass.classes.length ? c.drugClass.classes : makeDrugClasses(1, []),
+        },
+      };
+    })),
+
+  skipPendingLayer: layer =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      const pendingLayers = (c.pendingLayers ?? []).filter(l => l !== layer);
+      if (layer === 'diagnosis') return { ...c, pendingLayers, diagnosis: { ...c.diagnosis, included: false } };
+      if (layer === 'lot') return { ...c, pendingLayers, lot: { ...c.lot, included: false } };
+      return { ...c, pendingLayers, drugClass: { ...c.drugClass, included: false } };
+    })),
 
   // Step 1
   setPoolModel: model =>

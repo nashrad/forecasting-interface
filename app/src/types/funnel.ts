@@ -10,6 +10,9 @@ export type SegmentDimension =
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 export type ActiveStep = 1 | 2 | 3;
 
+/** Optional middle layers that the progressive builder adds/skips one at a time. */
+export type BuildableLayer = 'diagnosis' | 'lot' | 'drugClass';
+
 export interface SubSegment {
   id: string;
   label: string;
@@ -95,6 +98,13 @@ export interface FunnelConfig {
     approved: Product[];
     pipeline: Product[];
   };
+  /**
+   * Buildable layers that have not yet been decided (added or skipped) in the
+   * progressive builder. A layer in this list shows an Add/Skip callout instead
+   * of nodes or a ghost. Absent/empty = every layer already decided (default
+   * for seeded models).
+   */
+  pendingLayers?: BuildableLayer[];
 }
 
 export interface CascadeWarning {
