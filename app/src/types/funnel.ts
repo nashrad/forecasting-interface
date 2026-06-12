@@ -114,6 +114,11 @@ export interface CascadeWarning {
   title: string;
   affected: string[];
   onConfirm: () => void;
+  /** Copy overrides — defaults suit destructive cascades; reversible actions
+   *  (e.g. skipping a layer) can soften them. */
+  subtitle?: string;
+  bodyLabel?: string;
+  confirmLabel?: string;
 }
 
 // Derived types for the diagram
