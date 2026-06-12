@@ -1,4 +1,5 @@
 import { useFunnelStore } from '../../store/funnelStore';
+import { LIMITS } from '../../data/limits';
 import type { FunnelConfig } from '../../types/funnel';
 
 function LayerCard({ children, locked }: { children: React.ReactNode; locked?: boolean }) {
@@ -112,6 +113,7 @@ export function Step1Structure() {
     setProductsIncluded,
     setApprovedProductCount,
     setPipelineProductCount,
+    setTreatmentNodeCount,
   } = useFunnelStore();
 
   const config = activeConfig();
@@ -161,7 +163,7 @@ export function Step1Structure() {
             <CountRow
               label="Segments"
               value={diagnosis.segments.length}
-              min={1} max={5}
+              min={1} max={LIMITS.segments}
               onChange={setSegmentCount}
             />
             {diagnosis.segments.map(seg => (
@@ -169,7 +171,7 @@ export function Step1Structure() {
                 key={seg.id}
                 label={`↳ ${seg.label} sub-segments`}
                 value={seg.subSegments.length}
-                min={0} max={5}
+                min={0} max={LIMITS.subSegments}
                 onChange={v => setSubSegmentCount(seg.id, v)}
               />
             ))}
@@ -185,6 +187,14 @@ export function Step1Structure() {
           value={treatment.included}
           onChange={setTreatmentIncluded}
         />
+        {treatment.included && (
+          <CountRow
+            label="Treatment nodes"
+            value={treatment.nodes.length}
+            min={1} max={LIMITS.treatment}
+            onChange={setTreatmentNodeCount}
+          />
+        )}
       </LayerCard>
 
       {/* LOT */}
@@ -195,7 +205,7 @@ export function Step1Structure() {
           <CountRow
             label="Lines of therapy"
             value={lot.lines.length}
-            min={1} max={5}
+            min={1} max={LIMITS.lot}
             onChange={setLotLineCount}
           />
         )}
@@ -216,7 +226,7 @@ export function Step1Structure() {
           <CountRow
             label="Drug classes"
             value={drugClass.classes.length}
-            min={1} max={5}
+            min={1} max={LIMITS.drugClass}
             onChange={setDrugClassCount}
           />
         )}

@@ -21,6 +21,11 @@ export interface SubSegment {
   diagnosisRateSource?: string;
 }
 
+export interface TreatmentNode {
+  id: string;
+  label: string;
+}
+
 export interface Segment {
   id: string;
   label: string;
@@ -87,6 +92,7 @@ export interface FunnelConfig {
   };
   treatment: {
     included: boolean;
+    nodes: TreatmentNode[];
   };
   lot: {
     included: boolean;
