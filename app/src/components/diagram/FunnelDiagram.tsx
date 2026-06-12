@@ -9,6 +9,9 @@ const NODE_GAP_X = 10;
 const LAYER_GAP_Y = 60;
 const SUB_H = 30;
 const SUB_GAP_Y = 4;
+const GHOST_H = 40;
+
+type GhostLayerKey = 'diagnosis' | 'lot' | 'drugClass';
 
 interface LayoutNode {
   id: string;
@@ -27,6 +30,8 @@ interface LayoutNode {
   layer: string;
   bypass?: boolean;
   subCount?: number;
+  ghost?: boolean;
+  ghostLayer?: GhostLayerKey;
 }
 
 interface LayoutEdge {
@@ -36,14 +41,38 @@ interface LayoutEdge {
   bypass?: boolean;
 }
 
+const pad = 24;
+const centerX = CANVAS_W / 2;
+
+function ghostNode(layer: GhostLayerKey, label: string, y: number): LayoutNode {
+  return {
+    id: `ghost-${layer}`,
+    label: `${label} — skipped`,
+    compactLabel: `${label} — skipped`,
+    x: pad,
+    y,
+    w: CANVAS_W - pad * 2,
+    h: GHOST_H,
+    color: 'transparent',
+    textColor: '#94A3B8',
+    layer: 'ghost',
+    ghost: true,
+    ghostLayer: layer,
+    bypass: true,
+  };
+}
+
 function computeLayout(config: FunnelConfig, counts: Record<string, number>, step: number) {
   const nodes: LayoutNode[] = [];
   const edges: LayoutEdge[] = [];
   let currentY = 32;
   const nodeH = step === 1 ? COMPACT_NODE_H : NODE_H;
-  const pad = 24;
 
-  // ── Pool node ──────────────────────────────────────────
+  // Tracks the bottom Y of the previous rendered layer — every layer's incoming
+  // edges fan from the horizontal centre at this Y.
+  let prevBottomY: number;
+
+  // ── Pool node (always present) ─────────────────────────
   const poolLabel =
     config.poolModel === 'prevalence' ? 'Prevalence Pool' :
     config.poolModel === 'incidence' ? 'Diagnosed (Incidence) Pool' :
@@ -64,14 +93,14 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
     layer: 'pool',
   };
   nodes.push(poolNode);
+  prevBottomY = currentY + nodeH;
   currentY += nodeH + LAYER_GAP_Y;
 
-  const poolCenterX = pad + (CANVAS_W - pad * 2) / 2;
-  const poolBottomY = poolNode.y + nodeH;
+  const fanEdge = (id: string, targetX: number, targetY: number, bypass?: boolean) => {
+    edges.push({ id, x1: centerX, y1: prevBottomY, x2: targetX, y2: targetY, bypass });
+  };
 
   // ── Diagnosis segments ─────────────────────────────────
-  let diagLayerBottomY = poolNode.y + nodeH;
-
   if (config.diagnosis.included && config.diagnosis.segments.length > 0) {
     const segs = config.diagnosis.segments;
     const totalGap = (segs.length - 1) * NODE_GAP_X;
@@ -80,7 +109,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
 
     segs.forEach((seg, i) => {
       const x = pad + i * (nodeW + NODE_GAP_X);
-      const node: LayoutNode = {
+      nodes.push({
         id: `diag-${seg.id}`,
         label: seg.label,
         compactLabel: `S${i + 1}`,
@@ -92,15 +121,9 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
         count: counts[`diag-${seg.id}`],
         layer: 'segment',
         subCount: seg.subSegments.length,
-      };
-      nodes.push(node);
-      edges.push({
-        id: `e-pool-diag-${i}`,
-        x1: poolCenterX, y1: poolBottomY,
-        x2: x + nodeW / 2, y2: currentY,
       });
+      fanEdge(`e-pool-diag-${i}`, x + nodeW / 2, currentY);
 
-      // Sub-segments stacked vertically under parent
       seg.subSegments.forEach((sub, j) => {
         const subY = currentY + nodeH + SUB_GAP_Y + j * (SUB_H + SUB_GAP_Y);
         nodes.push({
@@ -116,13 +139,17 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
       });
     });
 
-    diagLayerBottomY = currentY + nodeH + (maxSubCount > 0 ? maxSubCount * (SUB_H + SUB_GAP_Y) : 0);
-    currentY = diagLayerBottomY + LAYER_GAP_Y;
+    prevBottomY = currentY + nodeH + (maxSubCount > 0 ? maxSubCount * (SUB_H + SUB_GAP_Y) : 0);
+    currentY = prevBottomY + LAYER_GAP_Y;
+  } else {
+    const g = ghostNode('diagnosis', 'Diagnosis', currentY);
+    nodes.push(g);
+    fanEdge('e-pool-ghost-diag', centerX, currentY, true);
+    prevBottomY = currentY + GHOST_H;
+    currentY = prevBottomY + LAYER_GAP_Y;
   }
 
-  // ── LOT ──────────────────────────────────────────────
-  const diagCenterX = CANVAS_W / 2;
-
+  // ── LOT ────────────────────────────────────────────────
   if (config.lot.included) {
     const lines = config.lot.lines;
     const totalGap = (lines.length - 1) * NODE_GAP_X;
@@ -142,21 +169,20 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
         count: counts[`lot-${line.id}`],
         layer: 'lot',
       });
-      edges.push({
-        id: `e-diag-lot-${i}`,
-        x1: diagCenterX, y1: diagLayerBottomY,
-        x2: x + nodeW / 2, y2: currentY,
-      });
+      fanEdge(`e-diag-lot-${i}`, x + nodeW / 2, currentY);
     });
 
+    prevBottomY = currentY + nodeH;
     currentY += nodeH + LAYER_GAP_Y;
+  } else {
+    const g = ghostNode('lot', 'Line of Therapy', currentY);
+    nodes.push(g);
+    fanEdge('e-ghost-lot', centerX, currentY, true);
+    prevBottomY = currentY + GHOST_H;
+    currentY = prevBottomY + LAYER_GAP_Y;
   }
 
-  // ── Drug Class ────────────────────────────────────────
-  const lotNodes = nodes.filter(n => n.layer === 'lot');
-  const lotBottomY = lotNodes.length > 0 ? lotNodes[0].y + nodeH : diagLayerBottomY;
-  const lotCenterX = CANVAS_W / 2;
-
+  // ── Drug Class ─────────────────────────────────────────
   if (config.drugClass.included) {
     const classes = config.drugClass.classes;
     const totalGap = (classes.length - 1) * NODE_GAP_X;
@@ -176,24 +202,20 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
         count: counts[`class-${cls.id}`],
         layer: 'class',
       });
-
-      const sourceY = config.lot.included ? lotBottomY : diagLayerBottomY;
-      edges.push({
-        id: `e-lot-class-${i}`,
-        x1: lotCenterX, y1: sourceY,
-        x2: x + nodeW / 2, y2: currentY,
-        bypass: !config.lot.included,
-      });
+      fanEdge(`e-lot-class-${i}`, x + nodeW / 2, currentY);
     });
 
+    prevBottomY = currentY + nodeH;
     currentY += nodeH + LAYER_GAP_Y;
+  } else {
+    const g = ghostNode('drugClass', 'Drug Class', currentY);
+    nodes.push(g);
+    fanEdge('e-ghost-class', centerX, currentY, true);
+    prevBottomY = currentY + GHOST_H;
+    currentY = prevBottomY + LAYER_GAP_Y;
   }
 
-  // ── Products ──────────────────────────────────────────
-  const classNodes = nodes.filter(n => n.layer === 'class');
-  const classBottomY = classNodes.length > 0 ? classNodes[0].y + nodeH : currentY - LAYER_GAP_Y;
-  const classCenterX = CANVAS_W / 2;
-
+  // ── Products (always present if any) ───────────────────
   const allProducts = [
     ...config.products.approved,
     ...config.products.pipeline,
@@ -222,17 +244,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
         count: counts[`prod-${prod.id}`],
         layer: 'product',
       });
-
-      const sourceY = config.drugClass.included ? classBottomY :
-                      config.lot.included ? lotBottomY :
-                      diagLayerBottomY;
-
-      edges.push({
-        id: `e-class-prod-${i}`,
-        x1: classCenterX, y1: sourceY,
-        x2: x + nodeW / 2, y2: currentY,
-        bypass: !config.drugClass.included,
-      });
+      fanEdge(`e-class-prod-${i}`, x + nodeW / 2, currentY);
     });
 
     currentY += nodeH + 32;
@@ -253,6 +265,54 @@ function CurvedEdge({ x1, y1, x2, y2, bypass }: { x1: number; y1: number; x2: nu
       strokeDasharray={bypass ? '6 4' : undefined}
       opacity={0.7}
     />
+  );
+}
+
+function GhostRow({ node, onReAdd }: { node: LayoutNode; onReAdd: (layer: GhostLayerKey) => void }) {
+  return (
+    <g>
+      <rect
+        x={node.x} y={node.y}
+        width={node.w} height={node.h}
+        rx={8}
+        fill="#F8FAFC"
+        stroke="#CBD5E1"
+        strokeWidth={1.5}
+        strokeDasharray="6 4"
+      />
+      <foreignObject x={node.x} y={node.y} width={node.w} height={node.h}>
+        <div style={{
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: '#94A3B8', fontStyle: 'italic' }}>
+            {node.label}
+          </span>
+          <button
+            onClick={() => node.ghostLayer && onReAdd(node.ghostLayer)}
+            title={`Add ${node.label.replace(' — skipped', '')} layer`}
+            style={{
+              width: 22, height: 22,
+              borderRadius: 6,
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#475569',
+              fontSize: 15,
+              lineHeight: 1,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            +
+          </button>
+        </div>
+      </foreignObject>
+    </g>
   );
 }
 
@@ -357,21 +417,27 @@ function LayerLabel({ label, y }: { label: string; y: number }) {
 }
 
 export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTMLDivElement> }) {
-  const { activeConfig, activeStep } = useFunnelStore();
+  const { activeConfig, activeStep, setDiagnosisIncluded, setLotIncluded, setDrugClassIncluded } = useFunnelStore();
   const config = activeConfig();
   const counts = computePatientCounts(config);
   const step = activeStep;
 
   const { nodes, edges, totalH } = computeLayout(config, counts, step);
 
+  const reAddLayer = (layer: GhostLayerKey) => {
+    if (layer === 'diagnosis') setDiagnosisIncluded(true);
+    else if (layer === 'lot') setLotIncluded(true);
+    else if (layer === 'drugClass') setDrugClassIncluded(true);
+  };
+
   const layerLabels: { label: string; y: number }[] = [];
   const poolNode = nodes.find(n => n.id === 'pool');
   if (poolNode) layerLabels.push({ label: 'Patient Pool', y: poolNode.y - 20 });
-  const firstSeg = nodes.find(n => n.layer === 'segment');
+  const firstSeg = nodes.find(n => n.layer === 'segment') ?? nodes.find(n => n.ghostLayer === 'diagnosis');
   if (firstSeg) layerLabels.push({ label: 'Diagnosis', y: firstSeg.y - 20 });
-  const firstLot = nodes.find(n => n.layer === 'lot');
+  const firstLot = nodes.find(n => n.layer === 'lot') ?? nodes.find(n => n.ghostLayer === 'lot');
   if (firstLot) layerLabels.push({ label: 'Line of Therapy', y: firstLot.y - 20 });
-  const firstClass = nodes.find(n => n.layer === 'class');
+  const firstClass = nodes.find(n => n.layer === 'class') ?? nodes.find(n => n.ghostLayer === 'drugClass');
   if (firstClass) layerLabels.push({ label: 'Drug Class', y: firstClass.y - 20 });
   const firstProd = nodes.find(n => n.layer === 'product');
   if (firstProd) layerLabels.push({ label: 'Products', y: firstProd.y - 20 });
@@ -400,9 +466,11 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
         {edges.map(e => (
           <CurvedEdge key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} bypass={e.bypass} />
         ))}
-        {nodes.map(n => (
-          <NodeRect key={n.id} node={n} step={step} />
-        ))}
+        {nodes.map(n =>
+          n.ghost
+            ? <GhostRow key={n.id} node={n} onReAdd={reAddLayer} />
+            : <NodeRect key={n.id} node={n} step={step} />
+        )}
       </svg>
     </div>
   );
