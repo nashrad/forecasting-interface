@@ -9,7 +9,7 @@ import { Step3Numbers } from './components/steps/Step3Numbers';
 import { FunnelDiagram } from './components/diagram/FunnelDiagram';
 import { CascadeWarningModal } from './components/shared/CascadeWarningModal';
 import { RoutingPanel } from './components/shared/RoutingPanel';
-import { ScenarioPanel } from './components/shared/ScenarioPanel';
+import { ScenarioSidebar } from './components/shared/ScenarioSidebar';
 
 export default function App() {
   const { activeConfig, activeStep } = useFunnelStore();
@@ -82,7 +82,6 @@ export default function App() {
           </div>
 
           <RoutingPanel />
-          <ScenarioPanel />
         </aside>
 
         {/* Diagram canvas */}
@@ -93,6 +92,9 @@ export default function App() {
             </div>
           </div>
         </main>
+
+        {/* Scenario sidebar (right) */}
+        <ScenarioSidebar />
       </div>
 
       <CascadeWarningModal />
