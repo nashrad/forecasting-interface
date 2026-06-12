@@ -10,8 +10,8 @@ export type SegmentDimension =
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 export type ActiveStep = 1 | 2 | 3;
 
-/** Optional middle layers that the progressive builder adds/skips one at a time. */
-export type BuildableLayer = 'diagnosis' | 'lot' | 'drugClass';
+/** Layers that the progressive builder adds/skips one at a time, in this order. */
+export type BuildableLayer = 'diagnosis' | 'lot' | 'drugClass' | 'products';
 
 export interface SubSegment {
   id: string;
@@ -78,6 +78,8 @@ export interface FunnelConfig {
   name: string;
   diseaseArea: string;
   poolModel: PoolModel;
+  /** False until the user picks a pool model — gates the whole build flow. */
+  poolSet?: boolean;
   population: PopulationData;
   diagnosis: {
     included: boolean;
@@ -95,6 +97,7 @@ export interface FunnelConfig {
     classes: DrugClass[];
   };
   products: {
+    included: boolean;
     approved: Product[];
     pipeline: Product[];
   };

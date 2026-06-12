@@ -1,7 +1,13 @@
 import { useFunnelStore } from '../../store/funnelStore';
 import { computePatientCounts, formatPatientCount } from '../../utils/calculations';
 import { layerMeta } from '../../data/layerMeta';
-import type { FunnelConfig, BuildableLayer } from '../../types/funnel';
+import type { FunnelConfig, BuildableLayer, PoolModel } from '../../types/funnel';
+
+const POOL_OPTIONS: { value: PoolModel; label: string; desc: string }[] = [
+  { value: 'prevalence', label: 'Prevalence', desc: 'Chronic disease (MS, RA, HIV)' },
+  { value: 'incidence', label: 'Incidence', desc: 'Acute / first-diagnosis only' },
+  { value: 'both', label: 'Prevalence + Incidence', desc: 'Major chronic with new cases' },
+];
 
 const CANVAS_W = 900;
 const NODE_H = 52;
@@ -13,6 +19,8 @@ const SUB_GAP_Y = 4;
 const GHOST_H = 40;
 const CALLOUT_W = 400;
 const CALLOUT_H = 132;
+const POOL_CALLOUT_W = 440;
+const POOL_CALLOUT_H = 236;
 
 const pad = 24;
 const centerX = CANVAS_W / 2;
@@ -101,7 +109,19 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
   let prevBottomY: number;
   let halted = false; // once we hit the first pending layer, stop rendering below
 
-  // ── Pool (always present) ──────────────────────────────
+  // ── Step 0: pool not yet chosen — show the pool-model callout only ──
+  if (!config.poolSet) {
+    nodes.push({
+      id: 'pool-callout',
+      label: 'Patient Pool', compactLabel: 'Patient Pool',
+      x: (CANVAS_W - POOL_CALLOUT_W) / 2, y: currentY,
+      w: POOL_CALLOUT_W, h: POOL_CALLOUT_H,
+      color: 'transparent', textColor: '#1E3A5F', layer: 'poolCallout',
+    });
+    return { nodes, edges, totalH: currentY + POOL_CALLOUT_H + 32 };
+  }
+
+  // ── Pool ───────────────────────────────────────────────
   const poolLabel =
     config.poolModel === 'prevalence' ? 'Prevalence Pool' :
     config.poolModel === 'incidence' ? 'Diagnosed (Incidence) Pool' :
@@ -221,9 +241,18 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
     }
   }
 
-  // ── Products (always present, once all middle layers decided) ──
+  // ── Products (buildable layer) ─────────────────────────
   const allProducts = [...config.products.approved, ...config.products.pipeline];
-  if (!halted && allProducts.length > 0) {
+  if (!halted && pending.has('products')) {
+    nodes.push(calloutNode('products', currentY));
+    fanEdge('e-callout-products', centerX, currentY);
+    halted = true;
+  } else if (!halted && !config.products.included) {
+    nodes.push(ghostNode('products', 'Products', currentY));
+    fanEdge('e-ghost-products', centerX, currentY, true);
+    prevBottomY = currentY + GHOST_H;
+    currentY = prevBottomY + LAYER_GAP_Y;
+  } else if (!halted && allProducts.length > 0) {
     const sizing = allProducts.map((_, i) => `Pr${i + 1}`);
     let pos: { x: number; w: number }[];
     if (compact) {
@@ -318,6 +347,37 @@ function CalloutBox({ node, onAdd, onSkip }: {
   );
 }
 
+function PoolCallout({ node, onChoose }: { node: LayoutNode; onChoose: (model: PoolModel) => void }) {
+  return (
+    <foreignObject x={node.x} y={node.y} width={node.w} height={node.h}>
+      <div style={{
+        height: '100%', boxSizing: 'border-box',
+        border: '1.5px dashed #93C5FD', borderRadius: 12, background: '#F0F7FF',
+        padding: '14px 16px', display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: '#2563EB', textTransform: 'uppercase' }}>
+          Start here · Patient pool
+        </div>
+        <div style={{ fontSize: 11, color: '#64748B', marginTop: 2, marginBottom: 8, lineHeight: 1.35 }}>
+          Choose how the patient pool is modelled. Everything else flows from this.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {POOL_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => onChoose(opt.value)}
+              style={{ textAlign: 'left', padding: '8px 12px', borderRadius: 8, border: '1px solid #CBD5E1', background: '#fff', cursor: 'pointer' }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1E3A5F' }}>{opt.label}</div>
+              <div style={{ fontSize: 11, color: '#64748B', marginTop: 1 }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </foreignObject>
+  );
+}
+
 function NodeRect({ node, step }: { node: LayoutNode; step: number }) {
   const isCompact = step === 1;
   const showCount = step === 3 && node.count !== undefined && node.count > 0;
@@ -376,8 +436,8 @@ function LayerLabel({ label, y }: { label: string; y: number }) {
 
 export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTMLDivElement> }) {
   const {
-    activeConfig, activeStep,
-    setDiagnosisIncluded, setLotIncluded, setDrugClassIncluded,
+    activeConfig, activeStep, setPoolModel,
+    setDiagnosisIncluded, setLotIncluded, setDrugClassIncluded, setProductsIncluded,
     showLayerTips, setLayerInfoTarget, addPendingLayer, skipPendingLayer, setPendingWarning,
   } = useFunnelStore();
   const config = activeConfig();
@@ -390,6 +450,7 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
     if (layer === 'diagnosis') setDiagnosisIncluded(true);
     else if (layer === 'lot') setLotIncluded(true);
     else if (layer === 'drugClass') setDrugClassIncluded(true);
+    else if (layer === 'products') setProductsIncluded(true);
   };
 
   const handleAdd = (layer: BuildableLayer) => {
@@ -421,7 +482,7 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
   if (firstLot) layerLabels.push({ label: 'Line of Therapy', y: firstLot.y - 20 });
   const firstClass = nodes.find(n => n.layer === 'class') ?? nodes.find(n => n.ghostLayer === 'drugClass');
   if (firstClass) layerLabels.push({ label: 'Drug Class', y: firstClass.y - 20 });
-  const firstProd = nodes.find(n => n.layer === 'product');
+  const firstProd = nodes.find(n => n.layer === 'product') ?? nodes.find(n => n.ghostLayer === 'products');
   if (firstProd) layerLabels.push({ label: 'Products', y: firstProd.y - 20 });
 
   return (
@@ -444,6 +505,7 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
         ))}
         {nodes.map(n => {
           if (n.ghost) return <GhostRow key={n.id} node={n} onReAdd={reAddLayer} />;
+          if (n.layer === 'poolCallout') return <PoolCallout key={n.id} node={n} onChoose={setPoolModel} />;
           if (n.layer === 'callout') return <CalloutBox key={n.id} node={n} onAdd={handleAdd} onSkip={handleSkip} />;
           return <NodeRect key={n.id} node={n} step={step} />;
         })}

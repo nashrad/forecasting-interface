@@ -1,9 +1,14 @@
 import { useFunnelStore } from '../../store/funnelStore';
 import type { FunnelConfig } from '../../types/funnel';
 
-function LayerCard({ children }: { children: React.ReactNode }) {
+function LayerCard({ children, locked }: { children: React.ReactNode; locked?: boolean }) {
   return (
-    <div className="mx-3 my-2 rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+    <div
+      className={`mx-3 my-2 rounded-xl border border-white/10 bg-white/5 overflow-hidden transition-opacity ${
+        locked ? 'opacity-40 pointer-events-none select-none' : ''
+      }`}
+      aria-disabled={locked}
+    >
       {children}
     </div>
   );
@@ -104,17 +109,28 @@ export function Step1Structure() {
     setLotLineCount,
     setDrugClassIncluded,
     setDrugClassCount,
+    setProductsIncluded,
     setApprovedProductCount,
     setPipelineProductCount,
   } = useFunnelStore();
 
   const config = activeConfig();
   const { diagnosis, treatment, lot, drugClass, products } = config;
+  // Until a pool model is chosen, the rest of the structure is locked.
+  const locked = !config.poolSet;
 
   return (
     <div className="flex-1 overflow-y-auto py-2">
 
-      {/* Pool model */}
+      {!locked ? null : (
+        <div className="mx-3 mt-2 mb-1 px-3 py-2 rounded-lg bg-blue-500/15 border border-blue-400/30">
+          <p className="text-[11px] text-blue-200">
+            Choose a patient pool model to begin. The rest unlocks once it's set.
+          </p>
+        </div>
+      )}
+
+      {/* Pool model — always enabled, it's the first step */}
       <LayerCard>
         <SectionHeader label="Patient Pool" />
         <div className="px-3 py-2 space-y-1">
@@ -124,7 +140,7 @@ export function Step1Structure() {
               onClick={() => setPoolModel(opt.value)}
               className={`
                 w-full text-left rounded-lg px-3 py-2.5 transition-all
-                ${config.poolModel === opt.value
+                ${config.poolSet && config.poolModel === opt.value
                   ? 'bg-blue-500/25 ring-1 ring-blue-400/50'
                   : 'hover:bg-white/8'}
               `}
@@ -137,7 +153,7 @@ export function Step1Structure() {
       </LayerCard>
 
       {/* Diagnosis */}
-      <LayerCard>
+      <LayerCard locked={locked}>
         <SectionHeader label="Diagnosis" />
         <ToggleRow label="Include diagnosis layer" value={diagnosis.included} onChange={setDiagnosisIncluded} />
         {diagnosis.included && (
@@ -162,7 +178,7 @@ export function Step1Structure() {
       </LayerCard>
 
       {/* Treatment */}
-      <LayerCard>
+      <LayerCard locked={locked}>
         <SectionHeader label="Treatment" />
         <ToggleRow
           label="Include treatment filter"
@@ -172,7 +188,7 @@ export function Step1Structure() {
       </LayerCard>
 
       {/* LOT */}
-      <LayerCard>
+      <LayerCard locked={locked}>
         <SectionHeader label="Line of Therapy (LOT)" />
         <ToggleRow label="Include LOT layer" value={lot.included} onChange={setLotIncluded} />
         {lot.included && (
@@ -193,7 +209,7 @@ export function Step1Structure() {
       </LayerCard>
 
       {/* Drug Class */}
-      <LayerCard>
+      <LayerCard locked={locked}>
         <SectionHeader label="Drug Class" />
         <ToggleRow label="Include drug class layer" value={drugClass.included} onChange={setDrugClassIncluded} />
         {drugClass.included && (
@@ -214,20 +230,32 @@ export function Step1Structure() {
       </LayerCard>
 
       {/* Products */}
-      <LayerCard>
+      <LayerCard locked={locked}>
         <SectionHeader label="Products" />
-        <CountRow
-          label="Approved products"
-          value={products.approved.length}
-          min={0} max={8}
-          onChange={setApprovedProductCount}
-        />
-        <CountRow
-          label="Pipeline assets"
-          value={products.pipeline.length}
-          min={0} max={8}
-          onChange={setPipelineProductCount}
-        />
+        <ToggleRow label="Include products layer" value={products.included} onChange={setProductsIncluded} />
+        {products.included && (
+          <>
+            <CountRow
+              label="Approved products"
+              value={products.approved.length}
+              min={0} max={8}
+              onChange={setApprovedProductCount}
+            />
+            <CountRow
+              label="Pipeline assets"
+              value={products.pipeline.length}
+              min={0} max={8}
+              onChange={setPipelineProductCount}
+            />
+          </>
+        )}
+        {!products.included && (
+          <div className="mx-3 mb-3 px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30">
+            <p className="text-[11px] text-amber-300">
+              Products skipped — funnel ends at the layer above.
+            </p>
+          </div>
+        )}
       </LayerCard>
 
       <div className="h-4" />

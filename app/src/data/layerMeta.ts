@@ -29,6 +29,12 @@ export const BUILDABLE_LAYERS: LayerMeta[] = [
     short: 'Group products by mechanism of action (e.g. checkpoint inhibitors).',
     long: 'The Drug Class layer groups therapies by mechanism of action (e.g. PD-1/PD-L1 inhibitors, TKIs, chemotherapy) and assigns each a share of treated patients. Add this if your forecast allocates patients across drug classes before individual products. Skipping it connects products directly after the line of therapy.',
   },
+  {
+    key: 'products',
+    name: 'Products',
+    short: 'Add the individual therapies — approved drugs and pipeline assets.',
+    long: 'The Products layer holds the individual therapies your forecast tracks — both approved drugs and pipeline assets, each with its own market share. This is the bottom of the funnel. Add this to model competition at the product level. Skipping it leaves the funnel ending at the layer above.',
+  },
 ];
 
 export const layerMeta = (key: BuildableLayer): LayerMeta =>
