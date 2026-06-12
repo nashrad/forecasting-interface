@@ -1,8 +1,8 @@
 # PharmaForecast — Project Context
 
-**Last updated:** June 2026  
+**Last updated:** 11 June 2026  
 **Current version:** v0.1.0-mvp (tagged on GitHub)  
-**Status:** MVP complete; entering polish phase
+**Status:** MVP complete; polish phase scoped and ready to begin
 
 ---
 
@@ -142,17 +142,51 @@ The MVP ships with a **realistic NSCLC (non-small-cell lung cancer) funnel** as 
 
 ---
 
+## UX Lead Review — Key Decisions (11 June 2026)
+
+Meeting with **Ayat Tayebulla** (UX Lead). These decisions override the original MVP scope:
+
+### Scope shift
+- **Step 1 (structural configuration) is the immediate stakeholder deliverable.** Steps 2 and 3 are built but will not be shown until a later review. Do not remove them — just deprioritise them in demos.
+- **Export is shelved entirely for now.** PowerPoint, PNG, Excel — all deferred. Do not prioritise.
+- **Slide-fit idea (focus + icon nodes)** — also shelved until export becomes a deliverable.
+
+### New action items from the call
+1. **Scenario redesign** — Scenarios must become **top-level navigation** (like ChatGPT conversation list), not a sidebar widget. Needs Figma exploration before code. Research how base/upside/downside scenarios should be classified first.
+2. **GitHub-style versioning** — Explore version history and change tracking for the flowchart.
+3. **Excel export** — When export is revisited, it should target Excel (not PowerPoint). Users want to reuse the visualization in existing Excel workflows. These are meaningfully different: Excel implies live data; PowerPoint implies static snapshot.
+4. **Taxonomy clarification** — Revisit the Excel sheet and orientation document to clarify: drug class vs product, marketed vs pipeline. The current model hierarchy may be wrong.
+5. **Diagram visual polish** — Node widths and padding need adjustment. Patient pool node should NOT span the full canvas width. Ideate in Figma first.
+6. **Configuration panel UX** — Make it intuitive enough for a first-time user to complete setup in under 5 minutes.
+
+### Conceptual clarifications (from the call)
+- **Prevalence** = currently diagnosed cases (not total population with the disease)
+- **Incidence** = new cases per year; separate from prevalence, visualised separately
+- **Diagnosis layer** = filters the undiagnosed fraction out of prevalence
+- **Drug class** = mechanism of action grouping (e.g. PD-1/PD-L1 inhibitors, CDK4/6 inhibitors)
+- **Line of therapy** = treatment sequence by intensity; 1L has the most patients, 3L+ progressively fewer
+
+---
+
 ## Next Phase: Polish
 
-User is planning to redesign/improve:
+### Workflow agreed
+- Each group of related changes = one **feature branch** (GitHub Flow)
+- Branch planning files stored in `Resources/branches/feature-[name].md` — one file per branch, acts as design brief for that branch
+- Two parallel tracks once branches are scoped:
+  - **Track A** — features that don't need visual design: implement immediately
+  - **Track B** — features that need Figma first: design → send mockup → implement
+- Never work two branches that touch the same files simultaneously (merge conflict risk)
 
-1. **Diagram visuals** — New design in Figma, then recreate in code
-2. **Toolbar UX** — Better section differentiation, clearer hierarchy
-3. **Editable diagram** — Make the canvas itself clickable/editable (scope TBD)
-4. **Version management UI** — Dedicated window for scenario history, better layout
-5. **Overall layout** — Global reorganization and responsive improvements
+### Planned feature branches (to be prioritised in next session)
+User has a list of changes noted. These will be grouped and prioritised at the start of the next session. Rough areas:
 
-**Workflow:** Each group of related changes = one feature branch (e.g., `feature/diagram-visuals`, `feature/toolbar-redesign`). One at a time, design in Figma first, then code.
+1. **Diagram visual polish** — node sizing, padding, pool node width, aesthetics (needs Figma)
+2. **Scenario redesign** — top-level navigation, classification research (needs Figma)
+3. **Configuration panel UX** — clarity, hierarchy, first-time-user experience (may need Figma)
+4. **Overall layout** — global reorganisation, proportions (needs Figma)
+5. **Versioning UI** — GitHub-style history tracking (needs scoping)
+6. **Taxonomy fix** — drug class/product hierarchy correction (code only, no Figma needed)
 
 ---
 
@@ -215,7 +249,8 @@ git push origin feature/your-change
 
 ## Key Memories / Design Ideas to Revisit
 
-- **Flowchart slide-fit idea:** User's concept for fitting large funnels into PPT slides via focus+icon-node approach (smaller minified context nodes for out-of-focus sections). Mark for critique when revisiting export/diagram scaling (PRD §6.4).
+- **Flowchart slide-fit idea:** User's concept for fitting large funnels into PPT slides via focus+icon-node approach (smaller minified context nodes for out-of-focus sections). **SHELVED** — revisit only when export becomes a deliverable. Critique this idea at that point (PRD §6.4).
+- **Branch planning:** User has a list of polish changes ready to share at the start of the next session. First task in that session: group into feature branches, prioritise, create `Resources/branches/` files.
 
 ---
 
