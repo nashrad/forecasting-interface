@@ -129,7 +129,7 @@ export function Step2Labels() {
                         value={sub.label}
                         onChange={e => updateSubSegmentLabel(seg.id, sub.id, e.target.value)}
                         placeholder={`Sub-segment ${j + 1}`}
-                        className="w-full bg-white/8 border border-white/10 rounded-md px-2.5 py-1.5 text-xs text-white placeholder-white/25 focus:outline-none focus:ring-1 focus:ring-blue-400/50"
+                        className="w-full bg-white/10 border border-white/15 rounded-md px-2.5 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-blue-400/50 transition-colors"
                       />
                     </div>
                   ))}

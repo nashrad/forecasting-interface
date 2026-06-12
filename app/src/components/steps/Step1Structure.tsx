@@ -1,9 +1,17 @@
 import { useFunnelStore } from '../../store/funnelStore';
 import type { FunnelConfig } from '../../types/funnel';
 
+function LayerCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mx-3 my-2 rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+      {children}
+    </div>
+  );
+}
+
 function SectionHeader({ label }: { label: string }) {
   return (
-    <div className="px-4 pt-4 pb-1">
+    <div className="px-3 pt-3 pb-2 border-b border-white/10">
       <span className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">{label}</span>
     </div>
   );
@@ -21,7 +29,7 @@ function ToggleRow({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-2.5">
+    <div className="flex items-center justify-between px-3 py-2.5">
       <span className="text-sm text-white/80">{label}</span>
       <button
         disabled={disabled}
@@ -55,7 +63,7 @@ function CountRow({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-2">
+    <div className="flex items-center justify-between px-3 py-2">
       <span className="text-sm text-white/70">{label}</span>
       <div className="flex items-center gap-1.5">
         <button
@@ -104,123 +112,125 @@ export function Step1Structure() {
   const { diagnosis, treatment, lot, drugClass, products } = config;
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto py-2">
 
       {/* Pool model */}
-      <SectionHeader label="Patient Pool" />
-      <div className="px-4 pb-2 space-y-1">
-        {POOL_OPTIONS.map(opt => (
-          <button
-            key={opt.value}
-            onClick={() => setPoolModel(opt.value)}
-            className={`
-              w-full text-left rounded-lg px-3 py-2.5 transition-all
-              ${config.poolModel === opt.value
-                ? 'bg-blue-500/25 ring-1 ring-blue-400/50'
-                : 'hover:bg-white/8'}
-            `}
-          >
-            <div className="text-sm font-medium text-white">{opt.label}</div>
-            <div className="text-[11px] text-white/50 mt-0.5">{opt.desc}</div>
-          </button>
-        ))}
-      </div>
-
-      <div className="h-px bg-white/10 mx-4 my-1" />
+      <LayerCard>
+        <SectionHeader label="Patient Pool" />
+        <div className="px-3 py-2 space-y-1">
+          {POOL_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setPoolModel(opt.value)}
+              className={`
+                w-full text-left rounded-lg px-3 py-2.5 transition-all
+                ${config.poolModel === opt.value
+                  ? 'bg-blue-500/25 ring-1 ring-blue-400/50'
+                  : 'hover:bg-white/8'}
+              `}
+            >
+              <div className="text-sm font-medium text-white">{opt.label}</div>
+              <div className="text-[11px] text-white/50 mt-0.5">{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+      </LayerCard>
 
       {/* Diagnosis */}
-      <SectionHeader label="Diagnosis" />
-      <ToggleRow label="Include diagnosis layer" value={diagnosis.included} onChange={setDiagnosisIncluded} />
-      {diagnosis.included && (
-        <>
-          <CountRow
-            label="Segments"
-            value={diagnosis.segments.length}
-            min={1} max={5}
-            onChange={setSegmentCount}
-          />
-          {diagnosis.segments.map(seg => (
+      <LayerCard>
+        <SectionHeader label="Diagnosis" />
+        <ToggleRow label="Include diagnosis layer" value={diagnosis.included} onChange={setDiagnosisIncluded} />
+        {diagnosis.included && (
+          <>
             <CountRow
-              key={seg.id}
-              label={`↳ ${seg.label} sub-segments`}
-              value={seg.subSegments.length}
-              min={0} max={5}
-              onChange={v => setSubSegmentCount(seg.id, v)}
+              label="Segments"
+              value={diagnosis.segments.length}
+              min={1} max={5}
+              onChange={setSegmentCount}
             />
-          ))}
-        </>
-      )}
-
-      <div className="h-px bg-white/10 mx-4 my-1" />
+            {diagnosis.segments.map(seg => (
+              <CountRow
+                key={seg.id}
+                label={`↳ ${seg.label} sub-segments`}
+                value={seg.subSegments.length}
+                min={0} max={5}
+                onChange={v => setSubSegmentCount(seg.id, v)}
+              />
+            ))}
+          </>
+        )}
+      </LayerCard>
 
       {/* Treatment */}
-      <SectionHeader label="Treatment" />
-      <ToggleRow
-        label="Include treatment filter"
-        value={treatment.included}
-        onChange={setTreatmentIncluded}
-      />
-
-      <div className="h-px bg-white/10 mx-4 my-1" />
+      <LayerCard>
+        <SectionHeader label="Treatment" />
+        <ToggleRow
+          label="Include treatment filter"
+          value={treatment.included}
+          onChange={setTreatmentIncluded}
+        />
+      </LayerCard>
 
       {/* LOT */}
-      <SectionHeader label="Line of Therapy (LOT)" />
-      <ToggleRow label="Include LOT layer" value={lot.included} onChange={setLotIncluded} />
-      {lot.included && (
-        <CountRow
-          label="Lines of therapy"
-          value={lot.lines.length}
-          min={1} max={5}
-          onChange={setLotLineCount}
-        />
-      )}
-      {!lot.included && (
-        <div className="mx-4 my-2 px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30">
-          <p className="text-[11px] text-amber-300">
-            Bypass active — products will connect directly to treatment pool.
-          </p>
-        </div>
-      )}
-
-      <div className="h-px bg-white/10 mx-4 my-1" />
+      <LayerCard>
+        <SectionHeader label="Line of Therapy (LOT)" />
+        <ToggleRow label="Include LOT layer" value={lot.included} onChange={setLotIncluded} />
+        {lot.included && (
+          <CountRow
+            label="Lines of therapy"
+            value={lot.lines.length}
+            min={1} max={5}
+            onChange={setLotLineCount}
+          />
+        )}
+        {!lot.included && (
+          <div className="mx-3 mb-3 px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30">
+            <p className="text-[11px] text-amber-300">
+              Bypass active — products will connect directly to treatment pool.
+            </p>
+          </div>
+        )}
+      </LayerCard>
 
       {/* Drug Class */}
-      <SectionHeader label="Drug Class" />
-      <ToggleRow label="Include drug class layer" value={drugClass.included} onChange={setDrugClassIncluded} />
-      {drugClass.included && (
-        <CountRow
-          label="Drug classes"
-          value={drugClass.classes.length}
-          min={1} max={5}
-          onChange={setDrugClassCount}
-        />
-      )}
-      {!drugClass.included && (
-        <div className="mx-4 my-2 px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30">
-          <p className="text-[11px] text-amber-300">
-            Bypass active — products connect directly after LOT.
-          </p>
-        </div>
-      )}
-
-      <div className="h-px bg-white/10 mx-4 my-1" />
+      <LayerCard>
+        <SectionHeader label="Drug Class" />
+        <ToggleRow label="Include drug class layer" value={drugClass.included} onChange={setDrugClassIncluded} />
+        {drugClass.included && (
+          <CountRow
+            label="Drug classes"
+            value={drugClass.classes.length}
+            min={1} max={5}
+            onChange={setDrugClassCount}
+          />
+        )}
+        {!drugClass.included && (
+          <div className="mx-3 mb-3 px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30">
+            <p className="text-[11px] text-amber-300">
+              Bypass active — products connect directly after LOT.
+            </p>
+          </div>
+        )}
+      </LayerCard>
 
       {/* Products */}
-      <SectionHeader label="Products" />
-      <CountRow
-        label="Approved products"
-        value={products.approved.length}
-        min={0} max={8}
-        onChange={setApprovedProductCount}
-      />
-      <CountRow
-        label="Pipeline assets"
-        value={products.pipeline.length}
-        min={0} max={8}
-        onChange={setPipelineProductCount}
-      />
+      <LayerCard>
+        <SectionHeader label="Products" />
+        <CountRow
+          label="Approved products"
+          value={products.approved.length}
+          min={0} max={8}
+          onChange={setApprovedProductCount}
+        />
+        <CountRow
+          label="Pipeline assets"
+          value={products.pipeline.length}
+          min={0} max={8}
+          onChange={setPipelineProductCount}
+        />
+      </LayerCard>
 
-      <div className="h-6" />
+      <div className="h-4" />
     </div>
   );
 }
