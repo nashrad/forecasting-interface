@@ -62,7 +62,7 @@ forecasting-interface/
 │   │   │   ├── shared/            # CascadeWarningModal, RoutingPanel, ScenarioSidebar,
 │   │   │   │                      #   LayerInfoModal, ScenarioPanel (old, unmounted)
 │   │   │   └── steps/             # Step1Structure, Step2Labels, Step3Numbers, StepNav
-│   │   ├── data/                  # nsclcSeed.ts (sample) + layerMeta.ts (build copy)
+│   │   ├── data/                  # nsclcSeed.ts (sample), layerMeta.ts (build copy), limits.ts (node caps)
 │   │   ├── store/                 # funnelStore.ts (Zustand state)
 │   │   ├── types/                 # funnel.ts (TypeScript domain model)
 │   │   ├── utils/                 # calculations.ts (live patient count computation)
@@ -182,13 +182,13 @@ Meeting with **Ayat Tayebulla** (UX Lead). These decisions override the original
 ### Branches built this phase (planning files in `Resources/branches/`)
 - **Branch 1 (`feature/canvas-layout`, PR #1, merged)** — centre diagram; Step 1 compact nodes; sub-segments stacked vertically; config panel restructured into nested per-layer cards.
 - **Branch 2 (`feature/scenario-panel`, PR #2, merged)** — three-column shell (config | canvas | scenarios); right scenario panel is a **placeholder** (no CRUD yet).
-- **Branch 3 (`feature/interactive-canvas-building`, PR #3, open)** — bundles ghost nodes (3a), progressive layer building (3b), the pool-first flow, and the compact-hug + responsive-scaling layout fix. See "Progressive Canvas Building" below.
+- **Branch 3 (`feature/interactive-canvas-building`, PR #3, merged)** — ghost nodes (3a), progressive layer building (3b), the pool-first flow, compact-hug + responsive-scaling layout fix. See "Progressive Canvas Building" below.
+- **Canvas node editing (`feature/canvas-node-editing`, PR #4, merged)** — add/delete segment & sub-segment on the canvas with config sync; fixed Treatment so the toggle renders a node; made `CascadeWarning` copy overridable (skip reads "you can add it back").
+- **All-layer node editing (`feature/canvas-node-editing-all-layers`, PR #5, open)** — add/delete buttons on **every** layer (treatment, LOT, drug class, products); Treatment is now a **multi-node** layer (`TreatmentNode[]`); shared `data/limits.ts` so config & canvas caps agree (was: canvas uncapped vs config max 5). Sub-segment add stays Diagnosis-only.
 
 ### Still open / deferred
-- **Canvas add/delete node buttons** (add segment to the right, sub-segment below) — node-level interactivity, *not built yet*; the next piece.
-- **Pool Incidence/Mortality sub-nodes** — deferred; needs new data-model fields.
-- **Branch 4 (`feature/config-panel-mapping`)** — bidirectional hover-highlight (node ↔ config section) + focus button on section headers.
-- **Skip-confirm copy nit** — skip reuses CascadeWarningModal whose subtitle says "cannot be undone" (skip is reversible via the ghost).
+- **Branch 4 (`feature/config-panel-mapping`)** — bidirectional hover-highlight (node ↔ config section) + focus button on section headers. *Not built yet; the last item on the polish list.*
+- **Pool Incidence/Mortality sub-nodes** — **parked for the Figma pass.** Data-model part is trivial; the open question is the visual grammar for inflow/outflow nodes against a downward funnel (design brief p.6).
 - Still Figma-track (not started): full diagram visual polish, scenario CRUD/classification, versioning UI, taxonomy fix.
 
 ---
@@ -210,7 +210,8 @@ These were decided in-session and **override** earlier open questions. Don't rel
 - **Pool first:** the canvas shows a pool-model callout (3 options); nothing else renders until one is chosen. The config panel is **disabled-but-visible** until then.
 - Then a **sequential Add/Skip callout** walks each buildable layer in order: **diagnosis → lot → drugClass → products**. Only the first undecided layer shows a callout; layers below stay hidden until reached.
 - **Add** opens `LayerInfoModal` (explanation + "don't show again", controlled by `showLayerTips`) then includes the layer; **Skip** → confirm → renders a dashed **ghost node** with a `+` to re-add. Skipped layers make bypass routing visible in the funnel itself.
-- State model (`types/funnel.ts`): `poolSet`, `pendingLayers: BuildableLayer[]`, and `products.included`. A layer is *included* / *skipped* / *pending*. Canvas and config both write the same store — neither is primary.
+- State model (`types/funnel.ts`): `poolSet`, `pendingLayers: BuildableLayer[]` (`diagnosis|lot|drugClass|products`), and `products.included`. A layer is *included* / *skipped* / *pending*. Canvas and config both write the same store — neither is primary.
+- Node editing: every layer row has canvas add (`+`) / delete (`×`) controls (gated to Step 1); sub-segment add is Diagnosis-only. Treatment is a multi-node layer (`TreatmentNode[]`). Node-count caps live in `data/limits.ts` and are shared by config and canvas.
 - Rejected mapping ideas (do not build): horizontal layer-row alignment, mini-flowchart legend in config. Drag-and-drop reorder also rejected.
 
 ---

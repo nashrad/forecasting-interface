@@ -1,6 +1,7 @@
 import { useFunnelStore } from '../../store/funnelStore';
 import { computePatientCounts, formatPatientCount } from '../../utils/calculations';
 import { layerMeta } from '../../data/layerMeta';
+import { LIMITS, MIN_NODES } from '../../data/limits';
 import type { FunnelConfig, BuildableLayer, PoolModel } from '../../types/funnel';
 
 const POOL_OPTIONS: { value: PoolModel; label: string; desc: string }[] = [
@@ -50,6 +51,7 @@ interface LayoutNode {
   calloutLayer?: BuildableLayer;
   segId?: string;
   subId?: string;
+  itemId?: string;
 }
 
 interface LayoutEdge {
@@ -160,7 +162,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
         x, y: currentY, w, h: nodeH,
         color: '#E8F4FD', textColor: '#1E3A5F',
         count: counts[`diag-${seg.id}`], layer: 'segment', subCount: seg.subSegments.length,
-        segId: seg.id,
+        segId: seg.id, itemId: seg.id,
       });
       fanEdge(`e-pool-diag-${i}`, x + w / 2, currentY);
 
@@ -185,18 +187,21 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
     currentY = prevBottomY + LAYER_GAP_Y;
   }
 
-  // ── Treatment filter (single node, toggled in config) ──
-  if (!halted && config.treatment.included) {
-    const tW = compact ? compactW('T') : 240;
-    const tX = (CANVAS_W - tW) / 2;
-    nodes.push({
-      id: 'treatment', label: 'Treated Patients', compactLabel: 'T',
-      sublabel: 'Treatment filter',
-      x: tX, y: currentY, w: tW, h: nodeH,
-      color: '#ECFEFF', textColor: '#0E7490',
-      count: counts['treatment'], layer: 'treatment',
+  // ── Treatment filter (toggled in config; one or more nodes) ──
+  if (!halted && config.treatment.included && config.treatment.nodes.length > 0) {
+    const tNodes = config.treatment.nodes;
+    const pos = rowPositions(tNodes.map((_, i) => `T${i + 1}`), compact);
+    tNodes.forEach((tn, i) => {
+      const { x, w } = pos[i];
+      nodes.push({
+        id: `treatment-${tn.id}`, label: tn.label, compactLabel: `T${i + 1}`,
+        sublabel: 'Treatment filter',
+        x, y: currentY, w, h: nodeH,
+        color: '#ECFEFF', textColor: '#0E7490',
+        layer: 'treatment', itemId: tn.id,
+      });
+      fanEdge(`e-diag-treatment-${i}`, x + w / 2, currentY);
     });
-    fanEdge('e-diag-treatment', tX + tW / 2, currentY);
     prevBottomY = currentY + nodeH;
     currentY += nodeH + LAYER_GAP_Y;
   }
@@ -217,7 +222,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
           sublabel: i > 0 ? `Attrition: ${((line.attritionRate ?? 0.5) * 100).toFixed(0)}%` : 'Entry line',
           x, y: currentY, w, h: nodeH,
           color: '#F0FDF4', textColor: '#166534',
-          count: counts[`lot-${line.id}`], layer: 'lot',
+          count: counts[`lot-${line.id}`], layer: 'lot', itemId: line.id,
         });
         fanEdge(`e-diag-lot-${i}`, x + w / 2, currentY);
       });
@@ -247,7 +252,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
           sublabel: cls.classShare ? `${(cls.classShare * 100).toFixed(0)}% class share` : 'Drug class',
           x, y: currentY, w, h: nodeH,
           color: '#FDF4FF', textColor: '#6B21A8',
-          count: counts[`class-${cls.id}`], layer: 'class',
+          count: counts[`class-${cls.id}`], layer: 'class', itemId: cls.id,
         });
         fanEdge(`e-lot-class-${i}`, x + w / 2, currentY);
       });
@@ -294,7 +299,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
         textColor: isApproved ? '#166534' : '#92400E',
         badge: isApproved ? undefined : prod.pipelineStage,
         badgeColor: prod.pipelineStage === 'Phase III' ? '#D97706' : prod.pipelineStage === 'Phase II' ? '#EA580C' : '#DC2626',
-        count: counts[`prod-${prod.id}`], layer: 'product',
+        count: counts[`prod-${prod.id}`], layer: 'product', itemId: prod.id,
       });
       fanEdge(`e-class-prod-${i}`, x + w / 2, currentY);
     });
@@ -420,36 +425,60 @@ function MiniButton({ x, y, size, glyph, title, onClick, danger }: {
   );
 }
 
-function EditOverlay({ nodes, canDeleteSegment, onAddSegment, onDeleteSegment, onAddSub, onDeleteSub }: {
+// Layers that support add/delete of sibling nodes on the canvas, in funnel order.
+const EDIT_LAYERS: { layer: string; max: number; noun: string }[] = [
+  { layer: 'segment', max: LIMITS.segments, noun: 'segment' },
+  { layer: 'treatment', max: LIMITS.treatment, noun: 'treatment node' },
+  { layer: 'lot', max: LIMITS.lot, noun: 'line of therapy' },
+  { layer: 'class', max: LIMITS.drugClass, noun: 'drug class' },
+  { layer: 'product', max: LIMITS.products, noun: 'product' },
+];
+
+function EditOverlay({ nodes, onAddLayer, onDeleteNode, onAddSub, onDeleteSub }: {
   nodes: LayoutNode[];
-  canDeleteSegment: boolean;
-  onAddSegment: () => void;
-  onDeleteSegment: (segId: string) => void;
+  onAddLayer: (layer: string) => void;
+  onDeleteNode: (layer: string, itemId: string) => void;
   onAddSub: (segId: string) => void;
   onDeleteSub: (segId: string, subId: string) => void;
 }) {
-  const segNodes = nodes.filter(n => n.layer === 'segment');
   const subNodes = nodes.filter(n => n.layer === 'sub');
-  if (segNodes.length === 0) return null;
-  const lastSeg = segNodes[segNodes.length - 1];
 
   return (
     <g>
-      {segNodes.map(seg => {
-        const subCount = seg.subCount ?? 0;
-        const addSubY = seg.y + seg.h + SUB_GAP_Y + subCount * (SUB_H + SUB_GAP_Y);
+      {EDIT_LAYERS.map(({ layer, max, noun }) => {
+        const rowNodes = nodes.filter(n => n.layer === layer);
+        if (rowNodes.length === 0) return null;
+        const last = rowNodes[rowNodes.length - 1];
+        const canDelete = rowNodes.length > MIN_NODES;
+        const canAdd = rowNodes.length < max;
+
         return (
-          <g key={`edit-${seg.segId}`}>
-            {canDeleteSegment && (
+          <g key={`edit-${layer}`}>
+            {rowNodes.map(n => (
+              <g key={`ctl-${n.id}`}>
+                {canDelete && (
+                  <MiniButton
+                    x={n.x + n.w - 9} y={n.y - 9} size={18} glyph="×" danger
+                    title={`Delete ${noun}`} onClick={() => onDeleteNode(layer, n.itemId!)}
+                  />
+                )}
+                {/* Sub-segment add — Diagnosis only */}
+                {layer === 'segment' && (
+                  <MiniButton
+                    x={n.x + n.w / 2 - 11}
+                    y={n.y + n.h + SUB_GAP_Y + (n.subCount ?? 0) * (SUB_H + SUB_GAP_Y)}
+                    size={22} glyph="+"
+                    title="Add sub-segment" onClick={() => onAddSub(n.itemId!)}
+                  />
+                )}
+              </g>
+            ))}
+            {canAdd && (
               <MiniButton
-                x={seg.x + seg.w - 9} y={seg.y - 9} size={18} glyph="×" danger
-                title="Delete segment" onClick={() => onDeleteSegment(seg.segId!)}
+                x={last.x + last.w + 8} y={last.y + (last.h - 24) / 2} size={24} glyph="+"
+                title={`Add ${noun}`} onClick={() => onAddLayer(layer)}
               />
             )}
-            <MiniButton
-              x={seg.x + seg.w / 2 - 11} y={addSubY} size={22} glyph="+"
-              title="Add sub-segment" onClick={() => onAddSub(seg.segId!)}
-            />
           </g>
         );
       })}
@@ -461,11 +490,6 @@ function EditOverlay({ nodes, canDeleteSegment, onAddSegment, onDeleteSegment, o
           title="Delete sub-segment" onClick={() => onDeleteSub(sub.segId!, sub.subId!)}
         />
       ))}
-
-      <MiniButton
-        x={lastSeg.x + lastSeg.w + 8} y={lastSeg.y + (lastSeg.h - 24) / 2} size={24} glyph="+"
-        title="Add segment" onClick={onAddSegment}
-      />
     </g>
   );
 }
@@ -532,6 +556,8 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
     setDiagnosisIncluded, setLotIncluded, setDrugClassIncluded, setProductsIncluded,
     showLayerTips, setLayerInfoTarget, addPendingLayer, skipPendingLayer, setPendingWarning,
     addSegment, deleteSegment, addSubSegment, deleteSubSegment,
+    addTreatmentNode, deleteTreatmentNode, addLotLine, deleteLotLine,
+    addDrugClass, deleteDrugClass, addProduct, deleteProduct,
   } = useFunnelStore();
   const config = activeConfig();
   const counts = computePatientCounts(config);
@@ -549,6 +575,22 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
   const handleAdd = (layer: BuildableLayer) => {
     if (showLayerTips) setLayerInfoTarget(layer);
     else addPendingLayer(layer);
+  };
+
+  const addByLayer = (layer: string) => {
+    if (layer === 'segment') addSegment();
+    else if (layer === 'treatment') addTreatmentNode();
+    else if (layer === 'lot') addLotLine();
+    else if (layer === 'class') addDrugClass();
+    else if (layer === 'product') addProduct();
+  };
+
+  const deleteByLayer = (layer: string, itemId: string) => {
+    if (layer === 'segment') handleDeleteSegment(itemId);
+    else if (layer === 'treatment') deleteTreatmentNode(itemId);
+    else if (layer === 'lot') deleteLotLine(itemId);
+    else if (layer === 'class') deleteDrugClass(itemId);
+    else if (layer === 'product') deleteProduct(itemId);
   };
 
   const handleDeleteSegment = (segId: string) => {
@@ -625,12 +667,11 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
           if (n.layer === 'callout') return <CalloutBox key={n.id} node={n} onAdd={handleAdd} onSkip={handleSkip} />;
           return <NodeRect key={n.id} node={n} step={step} />;
         })}
-        {step === 1 && config.diagnosis.included && (
+        {step === 1 && (
           <EditOverlay
             nodes={nodes}
-            canDeleteSegment={config.diagnosis.segments.length > 1}
-            onAddSegment={addSegment}
-            onDeleteSegment={handleDeleteSegment}
+            onAddLayer={addByLayer}
+            onDeleteNode={deleteByLayer}
             onAddSub={addSubSegment}
             onDeleteSub={deleteSubSegment}
           />

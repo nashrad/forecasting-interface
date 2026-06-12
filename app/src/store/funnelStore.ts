@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type { FunnelConfig, ActiveStep, CascadeWarning, Segment, LOTLine, DrugClass, Product, BuildableLayer } from '../types/funnel';
 import { nsclcSeed, emptyConfig } from '../data/nsclcSeed';
+import { LIMITS } from '../data/limits';
+
+const rid = () => `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
 interface ScenarioMeta {
   id: string;
@@ -46,13 +49,22 @@ interface FunnelStore {
   addSubSegment: (segmentId: string) => void;
   deleteSubSegment: (segmentId: string, subId: string) => void;
   setTreatmentIncluded: (included: boolean) => void;
+  setTreatmentNodeCount: (count: number) => void;
+  addTreatmentNode: () => void;
+  deleteTreatmentNode: (nodeId: string) => void;
   setLotIncluded: (included: boolean) => void;
   setLotLineCount: (count: number) => void;
+  addLotLine: () => void;
+  deleteLotLine: (lotId: string) => void;
   setDrugClassIncluded: (included: boolean) => void;
   setDrugClassCount: (count: number) => void;
+  addDrugClass: () => void;
+  deleteDrugClass: (classId: string) => void;
   setProductsIncluded: (included: boolean) => void;
   setApprovedProductCount: (count: number) => void;
   setPipelineProductCount: (count: number) => void;
+  addProduct: () => void;
+  deleteProduct: (productId: string) => void;
 
   // Step 2 — labelling
   setDiseaseArea: (name: string) => void;
@@ -352,20 +364,23 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
     }))),
 
   addSegment: () =>
-    set(s => updateConfig(s as FunnelStore, c => ({
-      ...c,
-      diagnosis: {
-        ...c.diagnosis,
-        segments: [
-          ...c.diagnosis.segments,
-          {
-            id: `seg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            label: `Segment ${c.diagnosis.segments.length + 1}`,
-            subSegments: [],
-          },
-        ],
-      },
-    }))),
+    set(s => updateConfig(s as FunnelStore, c => {
+      if (c.diagnosis.segments.length >= LIMITS.segments) return c;
+      return {
+        ...c,
+        diagnosis: {
+          ...c.diagnosis,
+          segments: [
+            ...c.diagnosis.segments,
+            {
+              id: `seg-${rid()}`,
+              label: `Segment ${c.diagnosis.segments.length + 1}`,
+              subSegments: [],
+            },
+          ],
+        },
+      };
+    })),
 
   deleteSegment: segmentId =>
     set(s => updateConfig(s as FunnelStore, c => ({
@@ -382,12 +397,12 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
       diagnosis: {
         ...c.diagnosis,
         segments: c.diagnosis.segments.map(seg =>
-          seg.id !== segmentId ? seg : {
+          seg.id !== segmentId || seg.subSegments.length >= LIMITS.subSegments ? seg : {
             ...seg,
             subSegments: [
               ...seg.subSegments,
               {
-                id: `sub-${segmentId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                id: `sub-${segmentId}-${rid()}`,
                 label: `Sub-segment ${seg.subSegments.length + 1}`,
               },
             ],
@@ -413,7 +428,99 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
   setTreatmentIncluded: included =>
     set(s => updateConfig(s as FunnelStore, c => ({
       ...c,
-      treatment: { included },
+      treatment: {
+        included,
+        nodes: c.treatment.nodes.length ? c.treatment.nodes : [{ id: `treat-${rid()}`, label: 'Treated Patients' }],
+      },
+    }))),
+
+  setTreatmentNodeCount: count =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      const existing = c.treatment.nodes;
+      const nodes = [];
+      for (let i = 0; i < count; i++) {
+        nodes.push(existing[i] ?? { id: `treat-${rid()}`, label: i === 0 ? 'Treated Patients' : `Treatment ${i + 1}` });
+      }
+      return { ...c, treatment: { ...c.treatment, nodes } };
+    })),
+
+  addTreatmentNode: () =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      if (c.treatment.nodes.length >= LIMITS.treatment) return c;
+      return {
+        ...c,
+        treatment: {
+          ...c.treatment,
+          nodes: [...c.treatment.nodes, { id: `treat-${rid()}`, label: `Treatment ${c.treatment.nodes.length + 1}` }],
+        },
+      };
+    })),
+
+  deleteTreatmentNode: nodeId =>
+    set(s => updateConfig(s as FunnelStore, c => ({
+      ...c,
+      treatment: { ...c.treatment, nodes: c.treatment.nodes.filter(n => n.id !== nodeId) },
+    }))),
+
+  addLotLine: () =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      if (c.lot.lines.length >= LIMITS.lot) return c;
+      const ordinals = ['1st', '2nd', '3rd', '4th', '5th'];
+      const i = c.lot.lines.length;
+      return {
+        ...c,
+        lot: {
+          ...c.lot,
+          lines: [...c.lot.lines, { id: `lot-${rid()}`, label: `${ordinals[i] ?? `${i + 1}th`} Line (${i + 1}L)`, attritionRate: i === 0 ? 0 : 0.5, subSegments: [] }],
+        },
+      };
+    })),
+
+  deleteLotLine: lotId =>
+    set(s => updateConfig(s as FunnelStore, c => ({
+      ...c,
+      lot: { ...c.lot, lines: c.lot.lines.filter(l => l.id !== lotId) },
+    }))),
+
+  addDrugClass: () =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      if (c.drugClass.classes.length >= LIMITS.drugClass) return c;
+      return {
+        ...c,
+        drugClass: {
+          ...c.drugClass,
+          classes: [...c.drugClass.classes, { id: `class-${rid()}`, label: `Drug Class ${c.drugClass.classes.length + 1}`, subSegments: [] }],
+        },
+      };
+    })),
+
+  deleteDrugClass: classId =>
+    set(s => updateConfig(s as FunnelStore, c => ({
+      ...c,
+      drugClass: { ...c.drugClass, classes: c.drugClass.classes.filter(cl => cl.id !== classId) },
+    }))),
+
+  addProduct: () =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      const total = c.products.approved.length + c.products.pipeline.length;
+      if (total >= LIMITS.products) return c;
+      return {
+        ...c,
+        products: {
+          ...c.products,
+          approved: [...c.products.approved, { id: `prod-approved-${rid()}`, label: `Product ${c.products.approved.length + 1}`, type: 'approved' }],
+        },
+      };
+    })),
+
+  deleteProduct: productId =>
+    set(s => updateConfig(s as FunnelStore, c => ({
+      ...c,
+      products: {
+        ...c.products,
+        approved: c.products.approved.filter(p => p.id !== productId),
+        pipeline: c.products.pipeline.filter(p => p.id !== productId),
+      },
     }))),
 
   setLotIncluded: included =>

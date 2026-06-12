@@ -84,6 +84,7 @@ export const nsclcSeed: FunnelConfig = {
   },
   treatment: {
     included: true,
+    nodes: [{ id: 'treat-1', label: 'Treated Patients' }],
   },
   lot: {
     included: true,
@@ -205,7 +206,7 @@ export const emptyConfig: FunnelConfig = {
       },
     ],
   },
-  treatment: { included: true },
+  treatment: { included: true, nodes: [{ id: 'treat-1', label: 'Treated Patients' }] },
   lot: {
     included: true,
     lines: [
