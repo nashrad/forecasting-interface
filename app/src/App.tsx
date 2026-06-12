@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Download, FlaskConical } from 'lucide-react';
+import { Download, FlaskConical, FilePlus } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { useFunnelStore } from './store/funnelStore';
 import { StepNav } from './components/steps/StepNav';
@@ -8,11 +8,12 @@ import { Step2Labels } from './components/steps/Step2Labels';
 import { Step3Numbers } from './components/steps/Step3Numbers';
 import { FunnelDiagram } from './components/diagram/FunnelDiagram';
 import { CascadeWarningModal } from './components/shared/CascadeWarningModal';
+import { LayerInfoModal } from './components/shared/LayerInfoModal';
 import { RoutingPanel } from './components/shared/RoutingPanel';
 import { ScenarioSidebar } from './components/shared/ScenarioSidebar';
 
 export default function App() {
-  const { activeConfig, activeStep } = useFunnelStore();
+  const { activeConfig, activeStep, resetToBlank } = useFunnelStore();
   const config = activeConfig();
   const step = activeStep;
   const diagramRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
@@ -58,6 +59,14 @@ export default function App() {
           </div>
 
           <button
+            onClick={resetToBlank}
+            className="flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            <FilePlus className="w-3.5 h-3.5" />
+            New blank
+          </button>
+
+          <button
             onClick={handleExport}
             className="flex items-center gap-1.5 text-xs font-medium text-white bg-[#1E3A5F] hover:bg-[#162d4a] rounded-lg px-3 py-1.5 transition-colors"
           >
@@ -98,6 +107,7 @@ export default function App() {
       </div>
 
       <CascadeWarningModal />
+      <LayerInfoModal />
     </div>
   );
 }

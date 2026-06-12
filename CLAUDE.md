@@ -1,8 +1,8 @@
 # PharmaForecast — Project Context
 
-**Last updated:** 11 June 2026  
+**Last updated:** 12 June 2026  
 **Current version:** v0.1.0-mvp (tagged on GitHub)  
-**Status:** MVP complete; polish phase scoped and ready to begin
+**Status:** Polish phase **underway**. Branches 1, 2, 3a/3b + pool-first build flow are built and in PRs (#1–#3 on GitHub). Being built as a **wireframe to validate concept and layout before Figma polish** — judge the work on interaction/layout, not visual finish.
 
 ---
 
@@ -58,14 +58,15 @@ forecasting-interface/
 ├── app/                           # React app (Vite)
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── diagram/           # FunnelDiagram.tsx (SVG rendering)
-│   │   │   ├── shared/            # CascadeWarningModal, RoutingPanel, ScenarioPanel
+│   │   │   ├── diagram/           # FunnelDiagram.tsx (SVG: nodes, ghosts, callouts)
+│   │   │   ├── shared/            # CascadeWarningModal, RoutingPanel, ScenarioSidebar,
+│   │   │   │                      #   LayerInfoModal, ScenarioPanel (old, unmounted)
 │   │   │   └── steps/             # Step1Structure, Step2Labels, Step3Numbers, StepNav
-│   │   ├── data/                  # nsclcSeed.ts (NSCLC worked example)
+│   │   ├── data/                  # nsclcSeed.ts (sample) + layerMeta.ts (build copy)
 │   │   ├── store/                 # funnelStore.ts (Zustand state)
 │   │   ├── types/                 # funnel.ts (TypeScript domain model)
 │   │   ├── utils/                 # calculations.ts (live patient count computation)
-│   │   ├── App.tsx                # Main layout (header, left panel, diagram)
+│   │   ├── App.tsx                # Three-column layout: config | canvas | scenarios
 │   │   └── main.tsx + index.css
 │   ├── package.json, tsconfig.json, vite.config.ts
 │   └── .gitignore                 # Excludes node_modules, dist
@@ -130,10 +131,10 @@ The MVP ships with a **realistic NSCLC (non-small-cell lung cancer) funnel** as 
 - Cascade warning modal works
 - Routing summary visible
 - Live diagram updates on all changes
-- Scenario switcher UI (in-session only)
-- PNG export
-- NSCLC seed data loaded by default
+- PNG export (shelved per UX review, still wired)
 - Deployed on Vercel
+
+> **Note (12 June):** the polish phase has since changed runtime behaviour — the app now boots into an **empty progressive build**, not NSCLC. NSCLC is retained as a sample scenario. The old in-left scenario switcher was replaced by the right-hand placeholder column. See "Polish-Phase Decisions" below.
 
 ### Version Control
 - `main` branch = stable, v0.1.0-mvp tagged
@@ -178,15 +179,39 @@ Meeting with **Ayat Tayebulla** (UX Lead). These decisions override the original
   - **Track B** — features that need Figma first: design → send mockup → implement
 - Never work two branches that touch the same files simultaneously (merge conflict risk)
 
-### Planned feature branches (to be prioritised in next session)
-User has a list of changes noted. These will be grouped and prioritised at the start of the next session. Rough areas:
+### Branches built this phase (planning files in `Resources/branches/`)
+- **Branch 1 (`feature/canvas-layout`, PR #1, merged)** — centre diagram; Step 1 compact nodes; sub-segments stacked vertically; config panel restructured into nested per-layer cards.
+- **Branch 2 (`feature/scenario-panel`, PR #2, merged)** — three-column shell (config | canvas | scenarios); right scenario panel is a **placeholder** (no CRUD yet).
+- **Branch 3 (`feature/interactive-canvas-building`, PR #3, open)** — bundles ghost nodes (3a), progressive layer building (3b), the pool-first flow, and the compact-hug + responsive-scaling layout fix. See "Progressive Canvas Building" below.
 
-1. **Diagram visual polish** — node sizing, padding, pool node width, aesthetics (needs Figma)
-2. **Scenario redesign** — top-level navigation, classification research (needs Figma)
-3. **Configuration panel UX** — clarity, hierarchy, first-time-user experience (may need Figma)
-4. **Overall layout** — global reorganisation, proportions (needs Figma)
-5. **Versioning UI** — GitHub-style history tracking (needs scoping)
-6. **Taxonomy fix** — drug class/product hierarchy correction (code only, no Figma needed)
+### Still open / deferred
+- **Canvas add/delete node buttons** (add segment to the right, sub-segment below) — node-level interactivity, *not built yet*; the next piece.
+- **Pool Incidence/Mortality sub-nodes** — deferred; needs new data-model fields.
+- **Branch 4 (`feature/config-panel-mapping`)** — bidirectional hover-highlight (node ↔ config section) + focus button on section headers.
+- **Skip-confirm copy nit** — skip reuses CascadeWarningModal whose subtitle says "cannot be undone" (skip is reversible via the ghost).
+- Still Figma-track (not started): full diagram visual polish, scenario CRUD/classification, versioning UI, taxonomy fix.
+
+---
+
+## Polish-Phase Decisions (12 June 2026)
+
+These were decided in-session and **override** earlier open questions. Don't relitigate.
+
+### Three-step model: kept
+- Guided vs Freestyle modes were considered and **rejected** — the three-step wizard stays the single model.
+- **Node behaviour by step:** Step 1 (Structure) nodes are compact and show only an initial+index (`P`, `S1`, `SS1.1`, `L1`, `DC1`, `Pr1`), hugging their text. Steps 2/3 expand the node. Node content model = **heading + subheading + a KPI-style value** (the earlier "tag" field was dropped).
+- Step 3 is built but **deferred** in demos until stakeholders approve Steps 1–2.
+
+### Scenarios: decided
+- Forecast scenarios with **locked structure, varying numbers, user-named**. A scenario is a numeric snapshot over a shared structure (not a structural copy). UI is a right-hand column; CRUD waits until Step 3 numbers are in scope.
+
+### Progressive Canvas Building (the headline new architecture)
+- The app **boots into an empty build** (`poolSet: false`, all middle layers pending). NSCLC is kept as a sample scenario, no longer the default active one. "New blank" header button re-enters the flow.
+- **Pool first:** the canvas shows a pool-model callout (3 options); nothing else renders until one is chosen. The config panel is **disabled-but-visible** until then.
+- Then a **sequential Add/Skip callout** walks each buildable layer in order: **diagnosis → lot → drugClass → products**. Only the first undecided layer shows a callout; layers below stay hidden until reached.
+- **Add** opens `LayerInfoModal` (explanation + "don't show again", controlled by `showLayerTips`) then includes the layer; **Skip** → confirm → renders a dashed **ghost node** with a `+` to re-add. Skipped layers make bypass routing visible in the funnel itself.
+- State model (`types/funnel.ts`): `poolSet`, `pendingLayers: BuildableLayer[]`, and `products.included`. A layer is *included* / *skipped* / *pending*. Canvas and config both write the same store — neither is primary.
+- Rejected mapping ideas (do not build): horizontal layer-row alignment, mini-flowchart legend in config. Drag-and-drop reorder also rejected.
 
 ---
 

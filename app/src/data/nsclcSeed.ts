@@ -5,6 +5,7 @@ export const nsclcSeed: FunnelConfig = {
   name: 'Base Case',
   diseaseArea: 'Non-Small Cell Lung Cancer (NSCLC)',
   poolModel: 'both',
+  poolSet: true,
   population: {
     prevalence: 1250000,
     prevalenceSource: 'GLOBOCAN 2022',
@@ -137,6 +138,7 @@ export const nsclcSeed: FunnelConfig = {
     ],
   },
   products: {
+    included: true,
     approved: [
       {
         id: 'prod-pembro',
@@ -191,6 +193,7 @@ export const emptyConfig: FunnelConfig = {
   name: 'New Scenario',
   diseaseArea: 'Disease Area',
   poolModel: 'prevalence',
+  poolSet: true,
   population: {},
   diagnosis: {
     included: true,
@@ -217,6 +220,7 @@ export const emptyConfig: FunnelConfig = {
     ],
   },
   products: {
+    included: true,
     approved: [{ id: 'prod-1', label: 'Product 1', type: 'approved' }],
     pipeline: [{ id: 'pipe-1', label: 'Pipeline Asset 1', type: 'pipeline', pipelineStage: 'Phase III' }],
   },

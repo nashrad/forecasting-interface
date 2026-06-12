@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FunnelConfig, ActiveStep, CascadeWarning, Segment, LOTLine, DrugClass, Product } from '../types/funnel';
+import type { FunnelConfig, ActiveStep, CascadeWarning, Segment, LOTLine, DrugClass, Product, BuildableLayer } from '../types/funnel';
 import { nsclcSeed, emptyConfig } from '../data/nsclcSeed';
 
 interface ScenarioMeta {
@@ -20,6 +20,14 @@ interface FunnelStore {
   pendingWarning: CascadeWarning | null;
   setPendingWarning: (warning: CascadeWarning | null) => void;
 
+  // Progressive layer builder
+  showLayerTips: boolean;
+  setShowLayerTips: (show: boolean) => void;
+  layerInfoTarget: BuildableLayer | null;
+  setLayerInfoTarget: (layer: BuildableLayer | null) => void;
+  addPendingLayer: (layer: BuildableLayer) => void;
+  skipPendingLayer: (layer: BuildableLayer) => void;
+
   // Scenario management
   activeConfig: () => FunnelConfig;
   switchScenario: (id: string) => void;
@@ -38,6 +46,7 @@ interface FunnelStore {
   setLotLineCount: (count: number) => void;
   setDrugClassIncluded: (included: boolean) => void;
   setDrugClassCount: (count: number) => void;
+  setProductsIncluded: (included: boolean) => void;
   setApprovedProductCount: (count: number) => void;
   setPipelineProductCount: (count: number) => void;
 
@@ -133,6 +142,20 @@ const makeProducts = (
   return result;
 };
 
+/** A fresh model at the very start of the progressive builder: no pool chosen,
+ *  every layer pending. The canvas walks the user through pool → each layer. */
+const makeBlankBuild = (): FunnelConfig => ({
+  ...JSON.parse(JSON.stringify(emptyConfig)),
+  id: `blank-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+  name: 'New Model',
+  poolSet: false,
+  diagnosis: { included: false, segments: [] },
+  lot: { included: false, lines: [] },
+  drugClass: { included: false, classes: [] },
+  products: { included: false, approved: [], pipeline: [] },
+  pendingLayers: ['diagnosis', 'lot', 'drugClass', 'products'],
+});
+
 const hasLabelsOrNumbers = (config: FunnelConfig): boolean => {
   return config.diagnosis.segments.some(
     s =>
@@ -143,11 +166,17 @@ const hasLabelsOrNumbers = (config: FunnelConfig): boolean => {
   );
 };
 
+const initialBlank = makeBlankBuild();
+
 export const useFunnelStore = create<FunnelStore>((set, get) => ({
-  scenarios: [nsclcSeed, { ...emptyConfig, id: 'upside', name: 'Upside' }],
-  activeScenarioId: nsclcSeed.id,
+  // Boot into an empty build so the user walks the pool → layer flow. NSCLC is
+  // kept as a sample scenario (reachable once scenario switching ships).
+  scenarios: [initialBlank, nsclcSeed],
+  activeScenarioId: initialBlank.id,
   activeStep: 1,
   pendingWarning: null,
+  showLayerTips: true,
+  layerInfoTarget: null,
 
   activeConfig: () =>
     get().scenarios.find(s => s.id === get().activeScenarioId) ?? get().scenarios[0],
@@ -177,16 +206,65 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
     })),
 
   resetToBlank: () => {
-    const blank: FunnelConfig = {
-      ...JSON.parse(JSON.stringify(emptyConfig)),
-      id: `blank-${Date.now()}`,
-    };
+    const blank = makeBlankBuild();
     set(s => ({ scenarios: [...s.scenarios, blank], activeScenarioId: blank.id }));
   },
 
+  setShowLayerTips: show => set({ showLayerTips: show }),
+  setLayerInfoTarget: layer => set({ layerInfoTarget: layer }),
+
+  addPendingLayer: layer =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      const pendingLayers = (c.pendingLayers ?? []).filter(l => l !== layer);
+      if (layer === 'diagnosis') {
+        return {
+          ...c, pendingLayers,
+          diagnosis: {
+            included: true,
+            segments: c.diagnosis.segments.length ? c.diagnosis.segments : makeSegments(1, []),
+          },
+        };
+      }
+      if (layer === 'lot') {
+        return {
+          ...c, pendingLayers,
+          lot: {
+            included: true,
+            lines: c.lot.lines.length ? c.lot.lines : makeLotLines(2, []),
+          },
+        };
+      }
+      if (layer === 'products') {
+        return {
+          ...c, pendingLayers,
+          products: {
+            included: true,
+            approved: c.products.approved.length ? c.products.approved : makeProducts(1, [], 'approved'),
+            pipeline: c.products.pipeline,
+          },
+        };
+      }
+      return {
+        ...c, pendingLayers,
+        drugClass: {
+          included: true,
+          classes: c.drugClass.classes.length ? c.drugClass.classes : makeDrugClasses(1, []),
+        },
+      };
+    })),
+
+  skipPendingLayer: layer =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      const pendingLayers = (c.pendingLayers ?? []).filter(l => l !== layer);
+      if (layer === 'diagnosis') return { ...c, pendingLayers, diagnosis: { ...c.diagnosis, included: false } };
+      if (layer === 'lot') return { ...c, pendingLayers, lot: { ...c.lot, included: false } };
+      if (layer === 'products') return { ...c, pendingLayers, products: { ...c.products, included: false } };
+      return { ...c, pendingLayers, drugClass: { ...c.drugClass, included: false } };
+    })),
+
   // Step 1
   setPoolModel: model =>
-    set(s => updateConfig(s as FunnelStore, c => ({ ...c, poolModel: model }))),
+    set(s => updateConfig(s as FunnelStore, c => ({ ...c, poolModel: model, poolSet: true }))),
 
   setDiagnosisIncluded: included =>
     set(s => {
@@ -299,6 +377,22 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
       drugClass: { ...c.drugClass, classes: makeDrugClasses(count, c.drugClass.classes) },
     }))),
 
+  setProductsIncluded: included =>
+    set(s => updateConfig(s as FunnelStore, c => {
+      const pendingLayers = (c.pendingLayers ?? []).filter(l => l !== 'products');
+      if (included) {
+        return {
+          ...c, pendingLayers,
+          products: {
+            included: true,
+            approved: c.products.approved.length ? c.products.approved : makeProducts(1, [], 'approved'),
+            pipeline: c.products.pipeline,
+          },
+        };
+      }
+      return { ...c, pendingLayers, products: { ...c.products, included: false } };
+    })),
+
   setApprovedProductCount: count =>
     set(s => updateConfig(s as FunnelStore, c => ({
       ...c,
@@ -388,6 +482,7 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
     set(s => updateConfig(s as FunnelStore, c => ({
       ...c,
       products: {
+        ...c.products,
         approved: c.products.approved.map(p => p.id === productId ? { ...p, label } : p),
         pipeline: c.products.pipeline.map(p => p.id === productId ? { ...p, label } : p),
       },
@@ -442,6 +537,7 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
     set(s => updateConfig(s as FunnelStore, c => ({
       ...c,
       products: {
+        ...c.products,
         approved: c.products.approved.map(p => p.id === productId ? { ...p, marketShare: share } : p),
         pipeline: c.products.pipeline.map(p => p.id === productId ? { ...p, peakShare: share } : p),
       },
