@@ -1,18 +1,19 @@
-import { useRef, useCallback } from 'react';
-import { toPng } from 'html-to-image';
 import { useFunnelStore } from '../../store/funnelStore';
 import { computePatientCounts, formatPatientCount } from '../../utils/calculations';
 import type { FunnelConfig } from '../../types/funnel';
 
 const CANVAS_W = 900;
 const NODE_H = 52;
+const COMPACT_NODE_H = 36;
 const NODE_GAP_X = 10;
 const LAYER_GAP_Y = 60;
 const SUB_H = 30;
+const SUB_GAP_Y = 4;
 
 interface LayoutNode {
   id: string;
   label: string;
+  compactLabel: string;
   sublabel?: string;
   x: number;
   y: number;
@@ -25,6 +26,7 @@ interface LayoutNode {
   count?: number;
   layer: string;
   bypass?: boolean;
+  subCount?: number;
 }
 
 interface LayoutEdge {
@@ -34,11 +36,11 @@ interface LayoutEdge {
   bypass?: boolean;
 }
 
-function computeLayout(config: FunnelConfig, counts: Record<string, number>) {
+function computeLayout(config: FunnelConfig, counts: Record<string, number>, step: number) {
   const nodes: LayoutNode[] = [];
   const edges: LayoutEdge[] = [];
   let currentY = 32;
-
+  const nodeH = step === 1 ? COMPACT_NODE_H : NODE_H;
   const pad = 24;
 
   // ── Pool node ──────────────────────────────────────────
@@ -50,40 +52,46 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>) {
   const poolNode: LayoutNode = {
     id: 'pool',
     label: poolLabel,
+    compactLabel: 'P',
     sublabel: config.diseaseArea,
     x: pad,
     y: currentY,
     w: CANVAS_W - pad * 2,
-    h: NODE_H,
+    h: nodeH,
     color: '#1E3A5F',
     textColor: '#FFFFFF',
     count: counts['pool'],
     layer: 'pool',
   };
   nodes.push(poolNode);
-  currentY += NODE_H + LAYER_GAP_Y;
+  currentY += nodeH + LAYER_GAP_Y;
 
   const poolCenterX = pad + (CANVAS_W - pad * 2) / 2;
-  const poolBottomY = poolNode.y + NODE_H;
+  const poolBottomY = poolNode.y + nodeH;
 
   // ── Diagnosis segments ─────────────────────────────────
+  let diagLayerBottomY = poolNode.y + nodeH;
+
   if (config.diagnosis.included && config.diagnosis.segments.length > 0) {
     const segs = config.diagnosis.segments;
     const totalGap = (segs.length - 1) * NODE_GAP_X;
     const nodeW = (CANVAS_W - pad * 2 - totalGap) / segs.length;
+    const maxSubCount = segs.reduce((max, s) => Math.max(max, s.subSegments.length), 0);
 
     segs.forEach((seg, i) => {
       const x = pad + i * (nodeW + NODE_GAP_X);
       const node: LayoutNode = {
         id: `diag-${seg.id}`,
         label: seg.label,
+        compactLabel: `S${i + 1}`,
         sublabel: seg.segmentDimension ?? 'Diagnosis',
         x, y: currentY,
-        w: nodeW, h: NODE_H,
+        w: nodeW, h: nodeH,
         color: '#E8F4FD',
         textColor: '#1E3A5F',
         count: counts[`diag-${seg.id}`],
         layer: 'segment',
+        subCount: seg.subSegments.length,
       };
       nodes.push(node);
       edges.push({
@@ -92,96 +100,84 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>) {
         x2: x + nodeW / 2, y2: currentY,
       });
 
-      // Sub-segments
-      if (seg.subSegments.length > 0) {
-        const subGap = 4;
-        const subTotalGap = (seg.subSegments.length - 1) * subGap;
-        const subW = (nodeW - subTotalGap) / seg.subSegments.length;
-        seg.subSegments.forEach((sub, j) => {
-          const subX = x + j * (subW + subGap);
-          nodes.push({
-            id: `sub-${sub.id}`,
-            label: sub.label,
-            x: subX, y: currentY + NODE_H + 4,
-            w: subW, h: SUB_H,
-            color: '#F0F7FF',
-            textColor: '#4A6FA5',
-            layer: 'sub',
-          });
+      // Sub-segments stacked vertically under parent
+      seg.subSegments.forEach((sub, j) => {
+        const subY = currentY + nodeH + SUB_GAP_Y + j * (SUB_H + SUB_GAP_Y);
+        nodes.push({
+          id: `sub-${sub.id}`,
+          label: sub.label,
+          compactLabel: `SS${i + 1}.${j + 1}`,
+          x, y: subY,
+          w: nodeW, h: SUB_H,
+          color: '#F0F7FF',
+          textColor: '#4A6FA5',
+          layer: 'sub',
         });
-      }
+      });
     });
 
-    const hasSubSegs = segs.some(s => s.subSegments.length > 0);
-    currentY += NODE_H + (hasSubSegs ? SUB_H + 4 : 0) + LAYER_GAP_Y;
+    diagLayerBottomY = currentY + nodeH + (maxSubCount > 0 ? maxSubCount * (SUB_H + SUB_GAP_Y) : 0);
+    currentY = diagLayerBottomY + LAYER_GAP_Y;
   }
 
   // ── LOT ──────────────────────────────────────────────
-  const diagNodes = nodes.filter(n => n.layer === 'segment');
-  const diagBottomY = diagNodes.length > 0 ? diagNodes[0].y + NODE_H : poolNode.y + NODE_H;
   const diagCenterX = CANVAS_W / 2;
 
-  const prevLayerBottomY = diagNodes.length > 0 ? diagNodes[0].y + NODE_H : poolNode.y + NODE_H;
-
-  if (!config.lot.included) {
-    // Bypass edge drawn later
-  } else {
+  if (config.lot.included) {
     const lines = config.lot.lines;
     const totalGap = (lines.length - 1) * NODE_GAP_X;
     const nodeW = (CANVAS_W - pad * 2 - totalGap) / lines.length;
 
     lines.forEach((line, i) => {
       const x = pad + i * (nodeW + NODE_GAP_X);
-      const node: LayoutNode = {
+      nodes.push({
         id: `lot-${line.id}`,
         label: line.label,
+        compactLabel: `L${i + 1}`,
         sublabel: i > 0 ? `Attrition: ${((line.attritionRate ?? 0.5) * 100).toFixed(0)}%` : 'Entry line',
         x, y: currentY,
-        w: nodeW, h: NODE_H,
+        w: nodeW, h: nodeH,
         color: '#F0FDF4',
         textColor: '#166534',
         count: counts[`lot-${line.id}`],
         layer: 'lot',
-      };
-      nodes.push(node);
+      });
       edges.push({
         id: `e-diag-lot-${i}`,
-        x1: diagCenterX, y1: prevLayerBottomY + (LAYER_GAP_Y / 2),
+        x1: diagCenterX, y1: diagLayerBottomY,
         x2: x + nodeW / 2, y2: currentY,
       });
     });
 
-    currentY += NODE_H + LAYER_GAP_Y;
+    currentY += nodeH + LAYER_GAP_Y;
   }
 
   // ── Drug Class ────────────────────────────────────────
   const lotNodes = nodes.filter(n => n.layer === 'lot');
-  const lotBottomY = lotNodes.length > 0 ? lotNodes[0].y + NODE_H : currentY - LAYER_GAP_Y;
+  const lotBottomY = lotNodes.length > 0 ? lotNodes[0].y + nodeH : diagLayerBottomY;
   const lotCenterX = CANVAS_W / 2;
 
-  if (!config.drugClass.included) {
-    // Bypass
-  } else {
+  if (config.drugClass.included) {
     const classes = config.drugClass.classes;
     const totalGap = (classes.length - 1) * NODE_GAP_X;
     const nodeW = (CANVAS_W - pad * 2 - totalGap) / classes.length;
 
     classes.forEach((cls, i) => {
       const x = pad + i * (nodeW + NODE_GAP_X);
-      const node: LayoutNode = {
+      nodes.push({
         id: `class-${cls.id}`,
         label: cls.label,
+        compactLabel: `DC${i + 1}`,
         sublabel: cls.classShare ? `${(cls.classShare * 100).toFixed(0)}% class share` : 'Drug class',
         x, y: currentY,
-        w: nodeW, h: NODE_H,
+        w: nodeW, h: nodeH,
         color: '#FDF4FF',
         textColor: '#6B21A8',
         count: counts[`class-${cls.id}`],
         layer: 'class',
-      };
-      nodes.push(node);
+      });
 
-      const sourceY = config.lot.included ? lotBottomY : (diagNodes.length > 0 ? diagNodes[0].y + NODE_H : poolNode.y + NODE_H);
+      const sourceY = config.lot.included ? lotBottomY : diagLayerBottomY;
       edges.push({
         id: `e-lot-class-${i}`,
         x1: lotCenterX, y1: sourceY,
@@ -190,12 +186,12 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>) {
       });
     });
 
-    currentY += NODE_H + LAYER_GAP_Y;
+    currentY += nodeH + LAYER_GAP_Y;
   }
 
   // ── Products ──────────────────────────────────────────
   const classNodes = nodes.filter(n => n.layer === 'class');
-  const classBottomY = classNodes.length > 0 ? classNodes[0].y + NODE_H : currentY - LAYER_GAP_Y;
+  const classBottomY = classNodes.length > 0 ? classNodes[0].y + nodeH : currentY - LAYER_GAP_Y;
   const classCenterX = CANVAS_W / 2;
 
   const allProducts = [
@@ -212,24 +208,24 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>) {
     allProducts.forEach((prod, i) => {
       const x = startX + i * (nodeW + NODE_GAP_X);
       const isApproved = prod.type === 'approved';
-      const node: LayoutNode = {
+      nodes.push({
         id: `prod-${prod.id}`,
         label: prod.label,
+        compactLabel: `Pr${i + 1}`,
         sublabel: isApproved ? 'Approved' : (prod.pipelineStage ?? 'Pipeline'),
         x, y: currentY,
-        w: nodeW, h: NODE_H,
+        w: nodeW, h: nodeH,
         color: isApproved ? '#F0FDF4' : '#FFFBEB',
         textColor: isApproved ? '#166534' : '#92400E',
         badge: isApproved ? undefined : prod.pipelineStage,
         badgeColor: prod.pipelineStage === 'Phase III' ? '#D97706' : prod.pipelineStage === 'Phase II' ? '#EA580C' : '#DC2626',
         count: counts[`prod-${prod.id}`],
         layer: 'product',
-      };
-      nodes.push(node);
+      });
 
       const sourceY = config.drugClass.included ? classBottomY :
                       config.lot.included ? lotBottomY :
-                      (diagNodes.length > 0 ? diagNodes[0].y + NODE_H : poolNode.y + NODE_H);
+                      diagLayerBottomY;
 
       edges.push({
         id: `e-class-prod-${i}`,
@@ -239,7 +235,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>) {
       });
     });
 
-    currentY += NODE_H + 32;
+    currentY += nodeH + 32;
   }
 
   return { nodes, edges, totalH: currentY };
@@ -261,6 +257,7 @@ function CurvedEdge({ x1, y1, x2, y2, bypass }: { x1: number; y1: number; x2: nu
 }
 
 function NodeRect({ node, step }: { node: LayoutNode; step: number }) {
+  const isCompact = step === 1;
   const showCount = step === 3 && node.count !== undefined && node.count > 0;
 
   return (
@@ -273,74 +270,79 @@ function NodeRect({ node, step }: { node: LayoutNode; step: number }) {
         stroke={node.layer === 'pool' ? 'none' : '#E2E8F0'}
         strokeWidth={1}
       />
-      {/* Label */}
-      <foreignObject x={node.x + 10} y={node.y} width={node.w - (showCount ? 70 : 20)} height={node.h}>
-        <div
-          style={{
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-          }}
+
+      {isCompact ? (
+        <text
+          x={node.x + node.w / 2}
+          y={node.y + node.h / 2 + 4}
+          textAnchor="middle"
+          fontSize={node.layer === 'sub' ? 9 : 11}
+          fontWeight={600}
+          fill={node.textColor}
+          style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
         >
-          <div
-            style={{
-              fontSize: node.layer === 'sub' ? '10px' : '12px',
-              fontWeight: node.layer === 'pool' ? 600 : 500,
-              color: node.textColor,
-              lineHeight: 1.3,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {node.label}
-          </div>
-          {node.sublabel && node.layer !== 'sub' && (
-            <div style={{ fontSize: '10px', color: node.textColor, opacity: 0.65, marginTop: 1 }}>
-              {node.sublabel}
+          {node.compactLabel}
+        </text>
+      ) : (
+        <>
+          <foreignObject x={node.x + 10} y={node.y} width={node.w - (showCount ? 70 : 20)} height={node.h}>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{
+                fontSize: node.layer === 'sub' ? '10px' : '12px',
+                fontWeight: node.layer === 'pool' ? 600 : 500,
+                color: node.textColor,
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {node.label}
+              </div>
+              {node.sublabel && node.layer !== 'sub' && (
+                <div style={{ fontSize: '10px', color: node.textColor, opacity: 0.65, marginTop: 1 }}>
+                  {node.sublabel}
+                </div>
+              )}
             </div>
+          </foreignObject>
+
+          {showCount && (
+            <foreignObject x={node.x + node.w - 64} y={node.y} width={60} height={node.h}>
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 10 }}>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: node.textColor,
+                  opacity: 0.8,
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {formatPatientCount(node.count!)}
+                </span>
+              </div>
+            </foreignObject>
           )}
-        </div>
-      </foreignObject>
 
-      {/* Patient count badge */}
-      {showCount && (
-        <foreignObject x={node.x + node.w - 64} y={node.y} width={60} height={node.h}>
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 10 }}>
-            <span style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              color: node.textColor,
-              opacity: 0.8,
-              fontVariantNumeric: 'tabular-nums',
-            }}>
-              {formatPatientCount(node.count!)}
-            </span>
-          </div>
-        </foreignObject>
-      )}
-
-      {/* Pipeline badge */}
-      {node.badge && (
-        <g>
-          <rect
-            x={node.x + node.w - 70} y={node.y + 6}
-            width={64} height={16}
-            rx={4}
-            fill={node.badgeColor ?? '#D97706'}
-            opacity={0.15}
-          />
-          <text
-            x={node.x + node.w - 38} y={node.y + 17}
-            textAnchor="middle"
-            fontSize={9}
-            fontWeight={600}
-            fill={node.badgeColor ?? '#D97706'}
-          >
-            {node.badge}
-          </text>
-        </g>
+          {node.badge && (
+            <g>
+              <rect
+                x={node.x + node.w - 70} y={node.y + 6}
+                width={64} height={16}
+                rx={4}
+                fill={node.badgeColor ?? '#D97706'}
+                opacity={0.15}
+              />
+              <text
+                x={node.x + node.w - 38} y={node.y + 17}
+                textAnchor="middle"
+                fontSize={9}
+                fontWeight={600}
+                fill={node.badgeColor ?? '#D97706'}
+              >
+                {node.badge}
+              </text>
+            </g>
+          )}
+        </>
       )}
     </g>
   );
@@ -360,7 +362,7 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
   const counts = computePatientCounts(config);
   const step = activeStep;
 
-  const { nodes, edges, totalH } = computeLayout(config, counts);
+  const { nodes, edges, totalH } = computeLayout(config, counts, step);
 
   const layerLabels: { label: string; y: number }[] = [];
   const poolNode = nodes.find(n => n.id === 'pool');
@@ -375,24 +377,29 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
   if (firstProd) layerLabels.push({ label: 'Products', y: firstProd.y - 20 });
 
   return (
-    <div ref={diagramRef} className="w-full h-full overflow-auto bg-white p-6" style={{ minHeight: totalH + 80 }}>
+    <div
+      ref={diagramRef}
+      className="bg-white"
+      style={{
+        minHeight: totalH + 80,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        padding: '24px',
+      }}
+    >
       <svg
         width={CANVAS_W}
         height={totalH}
         viewBox={`0 0 ${CANVAS_W} ${totalH}`}
         style={{ overflow: 'visible', fontFamily: 'Inter, system-ui, sans-serif' }}
       >
-        {/* Layer labels */}
         {layerLabels.map(ll => (
           <LayerLabel key={ll.label} label={ll.label} y={ll.y} />
         ))}
-
-        {/* Edges */}
         {edges.map(e => (
           <CurvedEdge key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} bypass={e.bypass} />
         ))}
-
-        {/* Nodes */}
         {nodes.map(n => (
           <NodeRect key={n.id} node={n} step={step} />
         ))}
