@@ -41,6 +41,10 @@ interface FunnelStore {
   setDiagnosisIncluded: (included: boolean) => void;
   setSegmentCount: (count: number) => void;
   setSubSegmentCount: (segmentId: string, count: number) => void;
+  addSegment: () => void;
+  deleteSegment: (segmentId: string) => void;
+  addSubSegment: (segmentId: string) => void;
+  deleteSubSegment: (segmentId: string, subId: string) => void;
   setTreatmentIncluded: (included: boolean) => void;
   setLotIncluded: (included: boolean) => void;
   setLotLineCount: (count: number) => void;
@@ -344,6 +348,65 @@ export const useFunnelStore = create<FunnelStore>((set, get) => ({
           }
           return { ...seg, subSegments: newSubs };
         }),
+      },
+    }))),
+
+  addSegment: () =>
+    set(s => updateConfig(s as FunnelStore, c => ({
+      ...c,
+      diagnosis: {
+        ...c.diagnosis,
+        segments: [
+          ...c.diagnosis.segments,
+          {
+            id: `seg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            label: `Segment ${c.diagnosis.segments.length + 1}`,
+            subSegments: [],
+          },
+        ],
+      },
+    }))),
+
+  deleteSegment: segmentId =>
+    set(s => updateConfig(s as FunnelStore, c => ({
+      ...c,
+      diagnosis: {
+        ...c.diagnosis,
+        segments: c.diagnosis.segments.filter(seg => seg.id !== segmentId),
+      },
+    }))),
+
+  addSubSegment: segmentId =>
+    set(s => updateConfig(s as FunnelStore, c => ({
+      ...c,
+      diagnosis: {
+        ...c.diagnosis,
+        segments: c.diagnosis.segments.map(seg =>
+          seg.id !== segmentId ? seg : {
+            ...seg,
+            subSegments: [
+              ...seg.subSegments,
+              {
+                id: `sub-${segmentId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                label: `Sub-segment ${seg.subSegments.length + 1}`,
+              },
+            ],
+          }
+        ),
+      },
+    }))),
+
+  deleteSubSegment: (segmentId, subId) =>
+    set(s => updateConfig(s as FunnelStore, c => ({
+      ...c,
+      diagnosis: {
+        ...c.diagnosis,
+        segments: c.diagnosis.segments.map(seg =>
+          seg.id !== segmentId ? seg : {
+            ...seg,
+            subSegments: seg.subSegments.filter(ss => ss.id !== subId),
+          }
+        ),
       },
     }))),
 

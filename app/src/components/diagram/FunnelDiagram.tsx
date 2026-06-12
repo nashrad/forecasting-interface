@@ -48,6 +48,8 @@ interface LayoutNode {
   ghost?: boolean;
   ghostLayer?: BuildableLayer;
   calloutLayer?: BuildableLayer;
+  segId?: string;
+  subId?: string;
 }
 
 interface LayoutEdge {
@@ -158,6 +160,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
         x, y: currentY, w, h: nodeH,
         color: '#E8F4FD', textColor: '#1E3A5F',
         count: counts[`diag-${seg.id}`], layer: 'segment', subCount: seg.subSegments.length,
+        segId: seg.id,
       });
       fanEdge(`e-pool-diag-${i}`, x + w / 2, currentY);
 
@@ -169,6 +172,7 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
           id: `sub-${sub.id}`, label: sub.label, compactLabel: subLabel,
           x, y: subY, w: subW, h: SUB_H,
           color: '#F0F7FF', textColor: '#4A6FA5', layer: 'sub',
+          segId: seg.id, subId: sub.id,
         });
       });
     });
@@ -179,6 +183,22 @@ function computeLayout(config: FunnelConfig, counts: Record<string, number>, ste
     fanEdge('e-ghost-diag', centerX, currentY, true);
     prevBottomY = currentY + GHOST_H;
     currentY = prevBottomY + LAYER_GAP_Y;
+  }
+
+  // ── Treatment filter (single node, toggled in config) ──
+  if (!halted && config.treatment.included) {
+    const tW = compact ? compactW('T') : 240;
+    const tX = (CANVAS_W - tW) / 2;
+    nodes.push({
+      id: 'treatment', label: 'Treated Patients', compactLabel: 'T',
+      sublabel: 'Treatment filter',
+      x: tX, y: currentY, w: tW, h: nodeH,
+      color: '#ECFEFF', textColor: '#0E7490',
+      count: counts['treatment'], layer: 'treatment',
+    });
+    fanEdge('e-diag-treatment', tX + tW / 2, currentY);
+    prevBottomY = currentY + nodeH;
+    currentY += nodeH + LAYER_GAP_Y;
   }
 
   // ── LOT ────────────────────────────────────────────────
@@ -378,6 +398,78 @@ function PoolCallout({ node, onChoose }: { node: LayoutNode; onChoose: (model: P
   );
 }
 
+/** Small round SVG button (add/delete affordances on the canvas). */
+function MiniButton({ x, y, size, glyph, title, onClick, danger }: {
+  x: number; y: number; size: number; glyph: string; title: string; onClick: () => void; danger?: boolean;
+}) {
+  return (
+    <foreignObject x={x} y={y} width={size} height={size} style={{ overflow: 'visible' }}>
+      <button
+        onClick={onClick}
+        title={title}
+        style={{
+          width: size, height: size, borderRadius: '50%',
+          border: `1px solid ${danger ? '#FCA5A5' : '#CBD5E1'}`,
+          background: '#fff', color: danger ? '#DC2626' : '#475569',
+          fontSize: size > 20 ? 15 : 12, lineHeight: 1, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+          boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+        }}
+      >{glyph}</button>
+    </foreignObject>
+  );
+}
+
+function EditOverlay({ nodes, canDeleteSegment, onAddSegment, onDeleteSegment, onAddSub, onDeleteSub }: {
+  nodes: LayoutNode[];
+  canDeleteSegment: boolean;
+  onAddSegment: () => void;
+  onDeleteSegment: (segId: string) => void;
+  onAddSub: (segId: string) => void;
+  onDeleteSub: (segId: string, subId: string) => void;
+}) {
+  const segNodes = nodes.filter(n => n.layer === 'segment');
+  const subNodes = nodes.filter(n => n.layer === 'sub');
+  if (segNodes.length === 0) return null;
+  const lastSeg = segNodes[segNodes.length - 1];
+
+  return (
+    <g>
+      {segNodes.map(seg => {
+        const subCount = seg.subCount ?? 0;
+        const addSubY = seg.y + seg.h + SUB_GAP_Y + subCount * (SUB_H + SUB_GAP_Y);
+        return (
+          <g key={`edit-${seg.segId}`}>
+            {canDeleteSegment && (
+              <MiniButton
+                x={seg.x + seg.w - 9} y={seg.y - 9} size={18} glyph="×" danger
+                title="Delete segment" onClick={() => onDeleteSegment(seg.segId!)}
+              />
+            )}
+            <MiniButton
+              x={seg.x + seg.w / 2 - 11} y={addSubY} size={22} glyph="+"
+              title="Add sub-segment" onClick={() => onAddSub(seg.segId!)}
+            />
+          </g>
+        );
+      })}
+
+      {subNodes.map(sub => (
+        <MiniButton
+          key={`del-${sub.subId}`}
+          x={sub.x + sub.w + 4} y={sub.y + (sub.h - 16) / 2} size={16} glyph="×" danger
+          title="Delete sub-segment" onClick={() => onDeleteSub(sub.segId!, sub.subId!)}
+        />
+      ))}
+
+      <MiniButton
+        x={lastSeg.x + lastSeg.w + 8} y={lastSeg.y + (lastSeg.h - 24) / 2} size={24} glyph="+"
+        title="Add segment" onClick={onAddSegment}
+      />
+    </g>
+  );
+}
+
 function NodeRect({ node, step }: { node: LayoutNode; step: number }) {
   const isCompact = step === 1;
   const showCount = step === 3 && node.count !== undefined && node.count > 0;
@@ -439,6 +531,7 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
     activeConfig, activeStep, setPoolModel,
     setDiagnosisIncluded, setLotIncluded, setDrugClassIncluded, setProductsIncluded,
     showLayerTips, setLayerInfoTarget, addPendingLayer, skipPendingLayer, setPendingWarning,
+    addSegment, deleteSegment, addSubSegment, deleteSubSegment,
   } = useFunnelStore();
   const config = activeConfig();
   const counts = computePatientCounts(config);
@@ -458,13 +551,34 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
     else addPendingLayer(layer);
   };
 
+  const handleDeleteSegment = (segId: string) => {
+    const seg = config.diagnosis.segments.find(s => s.id === segId);
+    const hasContent = !!seg && (seg.subSegments.length > 0 || (!!seg.label && !seg.label.startsWith('Segment')));
+    if (hasContent) {
+      setPendingWarning({
+        title: `Delete "${seg!.label}"?`,
+        affected: [
+          seg!.subSegments.length ? `${seg!.subSegments.length} sub-segment(s) under it` : 'Its label and configuration',
+          'Any rates or labels on this segment',
+        ],
+        confirmLabel: 'Delete segment',
+        onConfirm: () => { deleteSegment(segId); setPendingWarning(null); },
+      });
+    } else {
+      deleteSegment(segId);
+    }
+  };
+
   const handleSkip = (layer: BuildableLayer) => {
     const meta = layerMeta(layer);
     setPendingWarning({
       title: `Skip the ${meta.name} layer?`,
+      subtitle: 'You can add it back at any time.',
+      bodyLabel: 'Skipping will:',
+      confirmLabel: 'Skip layer',
       affected: [
-        `${meta.name} will be shown as a skipped (bypassed) layer in the funnel.`,
-        'You can add it back later from the ghost node or the config panel.',
+        `Show ${meta.name} as a skipped (bypassed) layer in the funnel.`,
+        'Let you re-add it later from the ghost node or the config panel.',
       ],
       onConfirm: () => {
         skipPendingLayer(layer);
@@ -478,6 +592,8 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
   if (poolNode) layerLabels.push({ label: 'Patient Pool', y: poolNode.y - 20 });
   const firstSeg = nodes.find(n => n.layer === 'segment') ?? nodes.find(n => n.ghostLayer === 'diagnosis');
   if (firstSeg) layerLabels.push({ label: 'Diagnosis', y: firstSeg.y - 20 });
+  const treatmentNode = nodes.find(n => n.layer === 'treatment');
+  if (treatmentNode) layerLabels.push({ label: 'Treatment', y: treatmentNode.y - 20 });
   const firstLot = nodes.find(n => n.layer === 'lot') ?? nodes.find(n => n.ghostLayer === 'lot');
   if (firstLot) layerLabels.push({ label: 'Line of Therapy', y: firstLot.y - 20 });
   const firstClass = nodes.find(n => n.layer === 'class') ?? nodes.find(n => n.ghostLayer === 'drugClass');
@@ -509,6 +625,16 @@ export function FunnelDiagram({ diagramRef }: { diagramRef: React.RefObject<HTML
           if (n.layer === 'callout') return <CalloutBox key={n.id} node={n} onAdd={handleAdd} onSkip={handleSkip} />;
           return <NodeRect key={n.id} node={n} step={step} />;
         })}
+        {step === 1 && config.diagnosis.included && (
+          <EditOverlay
+            nodes={nodes}
+            canDeleteSegment={config.diagnosis.segments.length > 1}
+            onAddSegment={addSegment}
+            onDeleteSegment={handleDeleteSegment}
+            onAddSub={addSubSegment}
+            onDeleteSub={deleteSubSegment}
+          />
+        )}
       </svg>
     </div>
   );
